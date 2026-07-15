@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hotel Work Management System</title>
+<link href="css/style.css" rel="stylesheet">
+</head>
+<body style="background:#F8FAFC;">
+  <div class="hwms-loading-overlay" style="position:fixed;">
+    <div class="hwms-spinner"></div>
+  </div>
+  <script>
+    // จุดเริ่มต้นของระบบ: ตรวจสอบสถานะล็อกอินแล้ว redirect ไปหน้าที่เหมาะสม
+    const user = sessionStorage.getItem("hwms_current_user");
+    window.location.href = user ? "dashboard.html" : "login.html";
+  </script>
+</body>
+</html>

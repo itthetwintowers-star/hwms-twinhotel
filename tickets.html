@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ติดตามงาน | Hotel Work Management System</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+
+<div class="hwms-app" id="hwmsApp">
+  <div id="sidebarContainer"></div>
+
+  <div class="hwms-main">
+    <div id="headerContainer"></div>
+
+    <main class="hwms-content hwms-fade-in">
+      <div class="d-flex justify-content-between align-items-end flex-wrap gap-2 mb-4">
+        <div>
+          <div class="hwms-page-title">ติดตามงาน</div>
+          <div class="hwms-page-subtitle">รายการงานแจ้งซ่อมและงานบริการทั้งหมดในระบบ</div>
+        </div>
+        <a href="new-ticket.html" class="btn btn-hwms-primary"><i class="fa-solid fa-plus me-1"></i> แจ้งงานใหม่</a>
+      </div>
+
+      <!-- Filter Bar -->
+      <div class="hwms-card hwms-card-body mb-3">
+        <div class="row g-2 align-items-end">
+          <div class="col-md-4">
+            <label class="hwms-label">ค้นหา</label>
+            <div class="position-relative">
+              <i class="fa-solid fa-magnifying-glass" style="position:absolute; left:14px; top:50%; transform:translateY(-50%); color:#94A3B8;"></i>
+              <input type="text" class="form-control hwms-input ps-5" id="searchInput" placeholder="ค้นหาเลข Ticket, หัวข้อ...">
+            </div>
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="hwms-label">สถานะ</label>
+            <select class="form-select hwms-input" id="filterStatus">
+              <option value="">ทั้งหมด</option>
+            </select>
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="hwms-label">ความสำคัญ</label>
+            <select class="form-select hwms-input" id="filterPriority">
+              <option value="">ทั้งหมด</option>
+            </select>
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="hwms-label">แผนก</label>
+            <select class="form-select hwms-input" id="filterDepartment">
+              <option value="">ทั้งหมด</option>
+            </select>
+          </div>
+          <div class="col-6 col-md-2">
+            <button class="btn btn-hwms-outline w-100" id="resetFilterBtn"><i class="fa-solid fa-rotate-left me-1"></i>ล้างตัวกรอง</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Table -->
+      <div class="hwms-table-wrap">
+        <div class="hwms-scroll-x">
+          <table class="table hwms-table mb-0">
+            <thead>
+              <tr>
+                <th style="cursor:pointer;" data-sort="ticketNo">Ticket No <i class="fa-solid fa-sort"></i></th>
+                <th style="cursor:pointer;" data-sort="subject">เรื่อง <i class="fa-solid fa-sort"></i></th>
+                <th>แผนก</th>
+                <th>ผู้รับผิดชอบ</th>
+                <th style="cursor:pointer;" data-sort="priority">ความสำคัญ <i class="fa-solid fa-sort"></i></th>
+                <th style="cursor:pointer;" data-sort="status">สถานะ <i class="fa-solid fa-sort"></i></th>
+                <th style="cursor:pointer;" data-sort="createdDate">วันที่แจ้ง <i class="fa-solid fa-sort"></i></th>
+                <th>จัดการ</th>
+              </tr>
+            </thead>
+            <tbody id="ticketsTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Pagination -->
+      <div class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
+        <div style="font-size:13px; color:var(--hwms-text-muted);" id="paginationInfo"></div>
+        <nav>
+          <ul class="pagination pagination-sm mb-0" id="paginationControls"></ul>
+        </nav>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/supabase-client.js"></script>
+<script src="js/app.js"></script>
+<script src="js/ticket.js"></script>
+</body>
+</html>

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard | Hotel Work Management System</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+
+<div class="hwms-app" id="hwmsApp">
+  <div id="sidebarContainer"></div>
+
+  <div class="hwms-main">
+    <div id="headerContainer"></div>
+
+    <main class="hwms-content hwms-fade-in">
+      <div class="d-flex justify-content-between align-items-end flex-wrap gap-2 mb-4">
+        <div>
+          <div class="hwms-page-title">Dashboard</div>
+          <div class="hwms-page-subtitle">ภาพรวมงานแจ้งซ่อมและงานบริการทั้งหมดของโรงแรม</div>
+        </div>
+        <a href="new-ticket.html" class="btn btn-hwms-primary"><i class="fa-solid fa-plus me-1"></i> แจ้งงานใหม่</a>
+      </div>
+
+      <!-- Stat Cards -->
+      <div class="row g-3 mb-4" id="statCardsRow"></div>
+
+      <!-- Charts -->
+      <div class="row g-3 mb-4">
+        <div class="col-lg-7">
+          <div class="hwms-card hwms-card-body h-100">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h2 style="font-size:15px;">งานรายเดือน</h2>
+              <span class="hwms-badge hwms-badge-primary">6 เดือนล่าสุด</span>
+            </div>
+            <canvas id="monthlyChart" height="220"></canvas>
+          </div>
+        </div>
+        <div class="col-lg-5">
+          <div class="hwms-card hwms-card-body h-100">
+            <h2 style="font-size:15px;" class="mb-3">งานตามประเภท</h2>
+            <canvas id="categoryChart" height="220"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-lg-12">
+          <div class="hwms-card hwms-card-body">
+            <h2 style="font-size:15px;" class="mb-3">งานตามแผนก</h2>
+            <canvas id="departmentChart" height="90"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent tickets -->
+      <div class="hwms-card">
+        <div class="hwms-card-body pb-0">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h2 style="font-size:15px;">รายการงานล่าสุด (Top 10)</h2>
+            <a href="tickets.html" style="font-size:13px; font-weight:700;">ดูทั้งหมด <i class="fa-solid fa-arrow-right ms-1"></i></a>
+          </div>
+        </div>
+        <div class="hwms-scroll-x">
+          <table class="table hwms-table mb-0">
+            <thead>
+              <tr>
+                <th>Ticket No</th>
+                <th>เรื่อง</th>
+                <th>แผนก</th>
+                <th>ผู้รับผิดชอบ</th>
+                <th>ความสำคัญ</th>
+                <th>สถานะ</th>
+                <th>วันที่แจ้ง</th>
+              </tr>
+            </thead>
+            <tbody id="recentTicketsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/supabase-client.js"></script>
+<script src="js/app.js"></script>
+<script src="js/dashboard.js"></script>
+</body>
+</html>
