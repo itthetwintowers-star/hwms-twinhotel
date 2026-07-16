@@ -18,8 +18,8 @@
  */
 
 /* ================= CONFIG (แก้ตรงนี้ให้ตรงกับโปรเจกต์ของคุณ) ================= */
-const SUPABASE_URL = "https://lxrzwyoagrtyzwyzfloy.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx4cnp3eW9hZ3J0eXp3eXpmbG95Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwODE4ODMsImV4cCI6MjA5OTY1Nzg4M30.EwQ8Q0Szz7jiySTgvu3QzkqVO0qyNI6Z5BgR5_xPkw8";
+const SUPABASE_URL = "https://YOUR-PROJECT-REF.supabase.co";
+const SUPABASE_ANON_KEY = "YOUR-SUPABASE-ANON-PUBLIC-KEY";
 
 // ตัว anon key นี้ "ปลอดภัยที่จะฝังในโค้ด frontend" (เช่นบน GitHub Pages)
 // เพราะสิทธิ์การเข้าถึงข้อมูลจริงถูกควบคุมด้วย Row Level Security (RLS)
@@ -95,7 +95,8 @@ function mapProfileRow(row) {
     role: row.role,
     department: row.department_id,
     avatarColor: row.avatar_color,
-    active: row.active
+    active: row.active,
+    createdAt: row.created_at
   };
 }
 
@@ -200,25 +201,129 @@ function generateTicketNo() {
  * เข้าสู่ระบบด้วย "ชื่อผู้ใช้งาน" (username) แทนอีเมล
  * ภายในจะแปลง username เป็นอีเมลรูปแบบ <username>@hwms.local ก่อนส่งให้ Supabase Auth
  * (ผู้ใช้ทุกคนต้องถูกสร้างด้วยอีเมลรูปแบบนี้ตอน setup ครั้งแรก ดู supabase/seed-admin.sql)
+ *
+ * คืนค่าเป็น { status, user? }
+ *   status: "ok"      -> เข้าสู่ระบบสำเร็จ, มี user แนบมาด้วย
+ *           "pending" -> username/password ถูกต้อง แต่ยังไม่ได้รับอนุมัติจาก Admin
+ *           "invalid" -> username หรือ password ไม่ถูกต้อง
  */
 async function findUserByCredentials(username, password) {
   const email = username.includes("@") ? username : `${username}@hwms.local`;
 
   const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-  if (error || !data.user) return null;
+  if (error || !data.user) return { status: "invalid" };
 
   const { data: profile } = await supabaseClient.from("profiles").select("*").eq("id", data.user.id).single();
-  if (!profile || !profile.active) {
+  if (!profile) {
     await supabaseClient.auth.signOut();
-    return null;
+    return { status: "invalid" };
+  }
+  if (!profile.active) {
+    await supabaseClient.auth.signOut();
+    return { status: "pending" };
   }
 
-  return mapProfileRow(profile);
+  return { status: "ok", user: mapProfileRow(profile) };
 }
 
 /** ออกจากระบบทั้งฝั่ง Supabase session และล้าง cache ท้องถิ่น */
 async function signOutSupabase() {
   await supabaseClient.auth.signOut();
+}
+
+/**
+ * สมัครสมาชิกใหม่ด้วยตัวเอง (role ถูกบังคับเป็น "Staff" และ active=false เสมอ
+ * โดย RLS policy ในฐานข้อมูล ต่อให้ส่งค่าอื่นมาจาก client ก็ถูกปฏิเสธ)
+ * รอ Admin เข้ามาอนุมัติ (เปลี่ยน active=true และปรับ role/แผนกได้ตอนอนุมัติ) ก่อนจึง login ใช้งานจริงได้
+ */
+async function registerNewUser({ fullName, username, password, departmentId }) {
+  const email = `${username}@hwms.local`;
+
+  const { data, error } = await supabaseClient.auth.signUp({ email, password });
+  if (error) throw error;
+  if (!data.user) throw new Error("ไม่สามารถสมัครสมาชิกได้ กรุณาลองใหม่อีกครั้ง");
+
+  const colors = ["#2563EB", "#22C55E", "#F59E0B", "#EF4444", "#8B5CF6", "#06B6D4"];
+  const avatarColor = colors[Math.floor(Math.random() * colors.length)];
+
+  const { error: profileError } = await supabaseClient.from("profiles").insert({
+    id: data.user.id,
+    full_name: fullName,
+    username,
+    email,
+    role: "Staff",
+    department_id: departmentId,
+    avatar_color: avatarColor,
+    active: false
+  });
+
+  // ออกจาก session ทันทีหลังสมัคร เพราะยังไม่ได้รับอนุมัติ ต้องรอ Admin ก่อน
+  await supabaseClient.auth.signOut();
+
+  if (profileError) throw profileError;
+  return true;
+}
+
+/** เปลี่ยนรหัสผ่านของตัวเอง (ต้อง login อยู่แล้ว ใช้ตอนจำรหัสผ่านเดิมไม่ได้แต่ยัง login ค้างอยู่ไม่ได้/ลืมทีหลัง) */
+async function changeOwnPassword(newPassword) {
+  const { error } = await supabaseClient.auth.updateUser({ password: newPassword });
+  if (error) throw error;
+  return true;
+}
+
+/** ดึงรายชื่อผู้ใช้ที่สมัครสมาชิกแล้วรอ Admin อนุมัติ (active = false) */
+async function getPendingUsers() {
+  const { data, error } = await supabaseClient
+    .from("profiles")
+    .select("*")
+    .eq("active", false)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data || []).map(mapProfileRow);
+}
+
+/** Admin อนุมัติผู้ใช้ พร้อมกำหนด role และแผนกที่แท้จริงตอนอนุมัติ */
+async function approveUser(userId, role, departmentId) {
+  const { error } = await supabaseClient
+    .from("profiles")
+    .update({ active: true, role, department_id: departmentId })
+    .eq("id", userId);
+  if (error) throw error;
+  await loadAppData();
+}
+
+/**
+ * Admin ปฏิเสธคำขอสมัครสมาชิก (ลบ profile ทิ้ง)
+ * หมายเหตุ: บัญชี Supabase Auth เบื้องหลัง (auth.users) จะยังค้างอยู่ ต้องเข้าไปลบเองใน
+ * Supabase Dashboard > Authentication > Users เป็นครั้งคราว (ข้อจำกัดของ client SDK)
+ */
+async function rejectUser(userId) {
+  const { error } = await supabaseClient.from("profiles").delete().eq("id", userId);
+  if (error) throw error;
+}
+
+/**
+ * ให้ Admin รีเซ็ตรหัสผ่านของผู้ใช้คนอื่น (กรณีลืมรหัสผ่านจนเข้าระบบไม่ได้เลย)
+ * เรียกผ่าน Supabase Edge Function "admin-reset-password" (ดู supabase/functions/)
+ * ฟังก์ชันนี้ตรวจสอบสิทธิ์ Admin อีกชั้นที่ฝั่งเซิร์ฟเวอร์เสมอ ต่อให้เรียกจาก client ที่ถูกแก้ไข
+ */
+async function adminResetPassword(targetUserId, newPassword) {
+  const { data: sessionData } = await supabaseClient.auth.getSession();
+  const accessToken = sessionData?.session?.access_token;
+  if (!accessToken) throw new Error("session หมดอายุ กรุณาเข้าสู่ระบบใหม่");
+
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/admin-reset-password`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${accessToken}`
+    },
+    body: JSON.stringify({ targetUserId, newPassword })
+  });
+
+  const result = await response.json();
+  if (!result.success) throw new Error(result.message || "รีเซ็ตรหัสผ่านไม่สำเร็จ");
+  return true;
 }
 
 /* ================= MUTATIONS (เขียนข้อมูลขึ้น Supabase แล้วอัปเดต cache) ================= */

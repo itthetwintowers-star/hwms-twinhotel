@@ -195,6 +195,7 @@ function renderHeader(pageTitle) {
           </div>
           <ul class="dropdown-menu dropdown-menu-end" style="border-radius:12px;">
             <li><a class="dropdown-item" href="settings.html"><i class="fa-solid fa-user me-2"></i>โปรไฟล์ของฉัน</a></li>
+            <li><a class="dropdown-item" href="#" onclick="openChangePasswordModal(); return false;"><i class="fa-solid fa-key me-2"></i>เปลี่ยนรหัสผ่าน</a></li>
             <li><a class="dropdown-item" href="settings.html"><i class="fa-solid fa-gear me-2"></i>ตั้งค่า</a></li>
             <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item text-danger" href="#" onclick="logout(); return false;"><i class="fa-solid fa-right-from-bracket me-2"></i>ออกจากระบบ</a></li>
@@ -293,4 +294,49 @@ function hideLoading() {
 function getQueryParam(name) {
   const params = new URLSearchParams(window.location.search);
   return params.get(name);
+}
+
+/* ================= CHANGE PASSWORD ================= */
+
+/** เปิด modal ให้ผู้ใช้เปลี่ยนรหัสผ่านของตัวเอง (ใช้ตอนยัง login อยู่ ไม่ใช่ตอนลืมรหัสผ่าน) */
+function openChangePasswordModal() {
+  Swal.fire({
+    title: "เปลี่ยนรหัสผ่าน",
+    html: `
+      <div class="text-start">
+        <label class="hwms-label" style="font-size:13px;">รหัสผ่านใหม่</label>
+        <input type="password" id="swalNewPassword" class="swal2-input" placeholder="อย่างน้อย 6 ตัวอักษร" style="margin:4px 0 12px;">
+        <label class="hwms-label" style="font-size:13px;">ยืนยันรหัสผ่านใหม่</label>
+        <input type="password" id="swalConfirmPassword" class="swal2-input" placeholder="กรอกรหัสผ่านใหม่อีกครั้ง" style="margin:4px 0;">
+      </div>
+    `,
+    confirmButtonText: "บันทึกรหัสผ่านใหม่",
+    cancelButtonText: "ยกเลิก",
+    showCancelButton: true,
+    confirmButtonColor: "#2563EB",
+    cancelButtonColor: "#64748B",
+    preConfirm: () => {
+      const newPassword = document.getElementById("swalNewPassword").value;
+      const confirmPassword = document.getElementById("swalConfirmPassword").value;
+
+      if (!newPassword || newPassword.length < 6) {
+        Swal.showValidationMessage("รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร");
+        return false;
+      }
+      if (newPassword !== confirmPassword) {
+        Swal.showValidationMessage("รหัสผ่านทั้งสองช่องไม่ตรงกัน");
+        return false;
+      }
+      return newPassword;
+    }
+  }).then(async (result) => {
+    if (!result.isConfirmed) return;
+    try {
+      await changeOwnPassword(result.value);
+      showToast("เปลี่ยนรหัสผ่านเรียบร้อยแล้ว");
+    } catch (err) {
+      console.error(err);
+      Swal.fire({ icon: "error", title: "เปลี่ยนรหัสผ่านไม่สำเร็จ", text: "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง", confirmButtonColor: "#EF4444" });
+    }
+  });
 }
