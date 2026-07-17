@@ -180,8 +180,11 @@ async function initTicketDetailPage() {
 }
 
 /** วาดรายละเอียด Ticket ทั้งหมดลงในหน้า */
+let _currentTicketDetail = null;
+
 function renderTicketDetail(ticket, currentUser) {
   const db = getDB();
+  _currentTicketDetail = ticket;
 
   document.getElementById("breadcrumbTicketNo").textContent = ticket.ticketNo;
   document.getElementById("ticketSubject").textContent = ticket.subject;
@@ -362,6 +365,11 @@ async function initTicketsListPage() {
   });
 
   renderTicketsTable();
+
+  // รีเฟรชตารางอัตโนมัติเมื่อมีงานใหม่/มีการอัปเดตแบบเรียลไทม์
+  document.addEventListener("hwms:ticketsUpdated", function () {
+    renderTicketsTable();
+  });
 }
 
 /** กรอง เรียงลำดับ และแบ่งหน้ารายการ ticket ตาม state ปัจจุบัน แล้ววาดตาราง */
@@ -477,4 +485,50 @@ function renderComments(ticket) {
       </div>
     </div>
   `).join("");
+}
+
+/* ================= PRINT WORK ORDER + QR CODE ================= */
+
+/**
+ * เตรียมข้อมูลใบสั่งงานลงใน #printArea แล้วสั่งพิมพ์ (window.print())
+ * QR Code เข้ารหัส URL ของหน้า ticket-detail.html นี้ (พร้อม ?id=...) เพื่อให้
+ * สแกนแล้วเปิดกลับมาที่ ticket ใบนี้ได้ทันที
+ */
+function printTicketWorkOrder() {
+  const ticket = _currentTicketDetail;
+  if (!ticket) {
+    Swal.fire({ icon: "warning", title: "ยังโหลดข้อมูลไม่เสร็จ", text: "กรุณารอสักครู่แล้วลองใหม่อีกครั้ง", confirmButtonColor: "#2563EB" });
+    return;
+  }
+
+  const db = getDB();
+  const company = db.companyProfile;
+
+  document.getElementById("printHotelName").textContent = (company && company.hotelName) || "Hotel Work Management System";
+  document.getElementById("printTicketNo").textContent = ticket.ticketNo;
+  document.getElementById("printSubject").textContent = ticket.subject;
+  document.getElementById("printDepartment").textContent = getDepartmentName(ticket.department);
+  document.getElementById("printCategory").textContent = getCategoryName(ticket.category);
+  document.getElementById("printLocation").textContent = ticket.location;
+  document.getElementById("printPriority").textContent = getPriorityInfo(ticket.priority).labelTh;
+  document.getElementById("printStatus").textContent = getStatusInfo(ticket.status).labelTh;
+  document.getElementById("printRequester").textContent = ticket.requesterName;
+  document.getElementById("printAssignee").textContent = ticket.assigneeName;
+  document.getElementById("printCreated").textContent = formatThaiDateTime(ticket.createdDate);
+  document.getElementById("printDue").textContent = formatThaiDateTime(ticket.dueDate);
+  document.getElementById("printDescription").textContent = ticket.description;
+
+  // สร้าง QR Code ใหม่ทุกครั้ง (ลบของเดิมก่อน กันซ้อนกันเวลากดพิมพ์หลายรอบ)
+  const qrContainer = document.getElementById("printQrcode");
+  qrContainer.innerHTML = "";
+  new QRCode(qrContainer, {
+    text: window.location.href,
+    width: 90,
+    height: 90,
+    colorDark: "#0F172A",
+    colorLight: "#ffffff"
+  });
+
+  // หน่วงเล็กน้อยให้ QR code วาดเสร็จก่อนค่อยเปิดหน้าต่างพิมพ์
+  setTimeout(() => window.print(), 200);
 }

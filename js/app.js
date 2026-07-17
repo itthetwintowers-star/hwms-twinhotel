@@ -46,6 +46,7 @@ function logout() {
     cancelButtonColor: "#64748B"
   }).then(async (result) => {
     if (result.isConfirmed) {
+      unsubscribeRealtimeTickets();
       await signOutSupabase();
       sessionStorage.removeItem(HWMS_SESSION_KEY);
       window.location.href = "login.html";
@@ -155,6 +156,9 @@ function renderHeader(pageTitle) {
       </div>
       <div class="hwms-header-actions">
         <div class="hwms-date-pill"><i class="fa-regular fa-calendar me-1"></i> ${dateStr}</div>
+        <button class="hwms-icon-btn" onclick="toggleDarkMode()" aria-label="สลับโหมดกลางวัน/กลางคืน" title="สลับโหมดกลางวัน/กลางคืน">
+          <i class="fa-solid ${localStorage.getItem("hwms_theme") === "dark" ? "fa-sun" : "fa-moon"}" id="themeToggleIcon"></i>
+        </button>
         <div class="dropdown">
           <button class="hwms-icon-btn" data-bs-toggle="dropdown" aria-label="การแจ้งเตือน">
             <i class="fa-regular fa-bell"></i>
@@ -229,6 +233,9 @@ async function initLayout(activeKey, pageTitle) {
   // โหลดข้อมูลทั้งหมดจาก Supabase มาไว้ใน cache ก่อนวาดหน้าใด ๆ
   await loadAppData();
 
+  // เริ่มติดตามการเปลี่ยนแปลงของ ticket แบบเรียลไทม์ (แจ้งเตือนสดเมื่อมีงานใหม่)
+  subscribeRealtimeTickets(user);
+
   renderSidebar(activeKey);
   renderHeader(pageTitle);
 
@@ -294,6 +301,25 @@ function hideLoading() {
 function getQueryParam(name) {
   const params = new URLSearchParams(window.location.search);
   return params.get(name);
+}
+
+/* ================= DARK MODE ================= */
+
+/** สลับโหมดกลางวัน/กลางคืน และจดจำค่าไว้ใน localStorage */
+function toggleDarkMode() {
+  const html = document.documentElement;
+  const isDark = html.getAttribute("data-theme") === "dark";
+  const icon = document.getElementById("themeToggleIcon");
+
+  if (isDark) {
+    html.removeAttribute("data-theme");
+    localStorage.setItem("hwms_theme", "light");
+    if (icon) icon.className = "fa-solid fa-moon";
+  } else {
+    html.setAttribute("data-theme", "dark");
+    localStorage.setItem("hwms_theme", "dark");
+    if (icon) icon.className = "fa-solid fa-sun";
+  }
 }
 
 /* ================= CHANGE PASSWORD ================= */

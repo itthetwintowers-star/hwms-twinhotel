@@ -4,7 +4,7 @@
  *  Hotel Work Management System (HWMS)
  *  --------------------------------------------------------
  *  โลจิกหน้า "รายงาน": ตัวกรอง, การ์ดสรุป, กราฟ, ตารางสรุปตามแผนก,
- *  และปุ่ม Export (Mock)
+ *  และปุ่ม Export จริง (Excel ผ่าน SheetJS, PDF ผ่านหน้าต่างพิมพ์ของเบราว์เซอร์)
  * =========================================================
  */
 
@@ -23,8 +23,11 @@ document.addEventListener("DOMContentLoaded", async function () {
   document.getElementById("reportDepartment").addEventListener("change", renderReport);
   document.getElementById("reportStatus").addEventListener("change", renderReport);
 
-  document.getElementById("exportExcelBtn").addEventListener("click", () => mockExport("Excel"));
-  document.getElementById("exportPdfBtn").addEventListener("click", () => mockExport("PDF"));
+  document.getElementById("exportExcelBtn").addEventListener("click", exportToExcel);
+  document.getElementById("exportPdfBtn").addEventListener("click", exportToPDF);
+
+  // รีเฟรชรายงานอัตโนมัติเมื่อมีงานใหม่/มีการอัปเดตแบบเรียลไทม์
+  document.addEventListener("hwms:ticketsUpdated", renderReport);
 });
 
 /** เติมตัวเลือกตัวกรองของหน้ารายงาน */
@@ -201,16 +204,122 @@ function renderReportTable(tickets) {
   `).join("");
 }
 
-/** จำลองการ Export รายงาน (Excel / PDF) */
-function mockExport(type) {
-  showLoading();
-  setTimeout(() => {
-    hideLoading();
-    Swal.fire({
-      icon: "success",
-      title: `Export ${type} สำเร็จ`,
-      text: `ระบบได้สร้างไฟล์รายงานในรูปแบบ ${type} เรียบร้อยแล้ว (ตัวอย่างจำลอง)`,
-      confirmButtonColor: "#2563EB"
-    });
-  }, 900);
+/** Export ข้อมูลรายงานปัจจุบัน (ตามตัวกรอง) เป็นไฟล์ Excel จริงด้วย SheetJS */
+function exportToExcel() {
+  const tickets = getFilteredReportTickets();
+
+  if (tickets.length === 0) {
+    Swal.fire({ icon: "warning", title: "ไม่มีข้อมูล", text: "ไม่พบข้อมูลตามเงื่อนไขที่เลือก ลองปรับตัวกรองใหม่", confirmButtonColor: "#2563EB" });
+    return;
+  }
+
+  // ชีตที่ 1: รายการ ticket ทั้งหมด
+  const rows = tickets.map(t => ({
+    "เลขที่ Ticket": t.ticketNo,
+    "เรื่อง": t.subject,
+    "แผนก": getDepartmentName(t.department),
+    "ประเภทงาน": getCategoryName(t.category),
+    "สถานที่": t.location,
+    "ผู้แจ้ง": t.requesterName,
+    "ผู้รับผิดชอบ": t.assigneeName,
+    "ความสำคัญ": getPriorityInfo(t.priority).labelTh,
+    "สถานะ": getStatusInfo(t.status).labelTh,
+    "เกินกำหนด": t.overdue ? "ใช่" : "ไม่",
+    "วันที่แจ้ง": formatThaiDateTime(t.createdDate),
+    "กำหนดเสร็จ": formatThaiDateTime(t.dueDate)
+  }));
+  const sheet1 = XLSX.utils.json_to_sheet(rows);
+  sheet1["!cols"] = Object.keys(rows[0]).map(() => ({ wch: 20 }));
+
+  // ชีตที่ 2: สรุปตามแผนก
+  const db = getDB();
+  const summaryRows = db.departments.map(dep => {
+    const deptTickets = tickets.filter(t => t.department === dep.id);
+    const total = deptTickets.length;
+    const completed = deptTickets.filter(t => t.status === "completed").length;
+    const overdue = deptTickets.filter(t => t.overdue).length;
+    return {
+      "แผนก": dep.nameTh,
+      "งานทั้งหมด": total,
+      "งานเสร็จสิ้น": completed,
+      "งานเกินกำหนด": overdue,
+      "อัตราความสำเร็จ (%)": total > 0 ? Math.round((completed / total) * 100) : 0
+    };
+  });
+  const sheet2 = XLSX.utils.json_to_sheet(summaryRows);
+  sheet2["!cols"] = Object.keys(summaryRows[0]).map(() => ({ wch: 20 }));
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, sheet1, "รายการงาน");
+  XLSX.utils.book_append_sheet(workbook, sheet2, "สรุปตามแผนก");
+
+  const fileName = `HWMS_Report_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  XLSX.writeFile(workbook, fileName);
+
+  showToast("Export Excel สำเร็จ");
+}
+
+/**
+ * Export ข้อมูลรายงานเป็น PDF โดยเปิดหน้าต่างพิมพ์ของเบราว์เซอร์เอง (window.print())
+ * แล้วให้ผู้ใช้เลือก "Save as PDF" เป็นปลายทางพิมพ์
+ * ใช้วิธีนี้แทน library สร้าง PDF ตรง ๆ เพราะฟอนต์ไทยจะเพี้ยน/ไม่แสดงผลถ้าไม่ฝังฟอนต์เอง
+ * แต่การพิมพ์ผ่านเบราว์เซอร์ใช้ฟอนต์ที่หน้าเว็บโหลดอยู่แล้วจึงแสดงภาษาไทยถูกต้อง 100%
+ */
+function exportToPDF() {
+  const tickets = getFilteredReportTickets();
+
+  if (tickets.length === 0) {
+    Swal.fire({ icon: "warning", title: "ไม่มีข้อมูล", text: "ไม่พบข้อมูลตามเงื่อนไขที่เลือก ลองปรับตัวกรองใหม่", confirmButtonColor: "#2563EB" });
+    return;
+  }
+
+  const rowsHtml = tickets.map(t => `
+    <tr>
+      <td>${t.ticketNo}</td>
+      <td>${t.subject}</td>
+      <td>${getDepartmentName(t.department)}</td>
+      <td>${t.assigneeName}</td>
+      <td>${getPriorityInfo(t.priority).labelTh}</td>
+      <td>${getStatusInfo(t.status).labelTh}</td>
+      <td>${formatThaiDateTime(t.createdDate)}</td>
+    </tr>
+  `).join("");
+
+  const printWindow = window.open("", "_blank");
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html lang="th">
+    <head>
+      <meta charset="UTF-8">
+      <title>รายงาน HWMS</title>
+      <link rel="preconnect" href="https://fonts.googleapis.com">
+      <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
+      <style>
+        body { font-family: "Noto Sans Thai", sans-serif; padding: 30px; color: #0F172A; }
+        h1 { font-size: 20px; margin-bottom: 4px; }
+        .meta { font-size: 12px; color: #64748B; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { border: 1px solid #CBD5E1; padding: 6px 8px; text-align: left; }
+        th { background: #F1F5F9; }
+      </style>
+    </head>
+    <body>
+      <h1>รายงานสรุปงานแจ้งซ่อม - Hotel Work Management System</h1>
+      <div class="meta">พิมพ์เมื่อ ${formatThaiDateTime(new Date())} • ทั้งหมด ${tickets.length} รายการ</div>
+      <table>
+        <thead>
+          <tr>
+            <th>เลขที่ Ticket</th><th>เรื่อง</th><th>แผนก</th><th>ผู้รับผิดชอบ</th>
+            <th>ความสำคัญ</th><th>สถานะ</th><th>วันที่แจ้ง</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+      <script>
+        window.onload = function () { setTimeout(function () { window.print(); }, 300); };
+      </script>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
 }

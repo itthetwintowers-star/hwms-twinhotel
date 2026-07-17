@@ -7,10 +7,11 @@
  * =========================================================
  */
 
+let dashboardCharts = {};
+
 document.addEventListener("DOMContentLoaded", async function () {
   const user = await initLayout("dashboard", "Dashboard");
   if (!user) return;
-
   const tickets = getAllTickets();
 
   renderStatCards(tickets);
@@ -18,6 +19,16 @@ document.addEventListener("DOMContentLoaded", async function () {
   renderCategoryChart(tickets);
   renderDepartmentChart(tickets);
   renderRecentTickets(tickets);
+
+  // รีเฟรชหน้า Dashboard อัตโนมัติเมื่อมีงานใหม่/มีการอัปเดตแบบเรียลไทม์
+  document.addEventListener("hwms:ticketsUpdated", function () {
+    const latest = getAllTickets();
+    renderStatCards(latest);
+    renderMonthlyChart(latest);
+    renderCategoryChart(latest);
+    renderDepartmentChart(latest);
+    renderRecentTickets(latest);
+  });
 });
 
 /** คำนวณและแสดงการ์ดสรุปสถานะงานทั้ง 4 ประเภท */
@@ -68,7 +79,8 @@ function renderMonthlyChart(tickets) {
   }
 
   const ctx = document.getElementById("monthlyChart");
-  new Chart(ctx, {
+  if (dashboardCharts.monthly) dashboardCharts.monthly.destroy();
+  dashboardCharts.monthly = new Chart(ctx, {
     type: "line",
     data: {
       labels: months,
@@ -100,7 +112,8 @@ function renderCategoryChart(tickets) {
   const counts = categories.map(c => tickets.filter(t => t.category === c.id).length);
 
   const ctx = document.getElementById("categoryChart");
-  new Chart(ctx, {
+  if (dashboardCharts.category) dashboardCharts.category.destroy();
+  dashboardCharts.category = new Chart(ctx, {
     type: "doughnut",
     data: {
       labels: categories.map(c => c.nameTh),
@@ -124,7 +137,8 @@ function renderDepartmentChart(tickets) {
   const counts = departments.map(d => tickets.filter(t => t.department === d.id).length);
 
   const ctx = document.getElementById("departmentChart");
-  new Chart(ctx, {
+  if (dashboardCharts.department) dashboardCharts.department.destroy();
+  dashboardCharts.department = new Chart(ctx, {
     type: "bar",
     data: {
       labels: departments.map(d => d.nameTh),
