@@ -381,15 +381,16 @@ function renderPriorityTable(db) {
       <td><strong>${p.id}</strong></td>
       <td>${p.label}</td>
       <td>${p.labelTh}</td>
+      <td>${p.slaHours} ชม.</td>
       <td>
-        <button class="hwms-icon-btn" style="width:32px;height:32px;" onclick="showEditPriorityModal('${p.id}', '${escapeJs(p.labelTh)}', '${escapeJs(p.color)}')" title="แก้ไข"><i class="fa-solid fa-pen" style="font-size:11px;"></i></button>
+        <button class="hwms-icon-btn" style="width:32px;height:32px;" onclick="showEditPriorityModal('${p.id}', '${escapeJs(p.labelTh)}', '${escapeJs(p.color)}', ${p.slaHours})" title="แก้ไข"><i class="fa-solid fa-pen" style="font-size:11px;"></i></button>
       </td>
     </tr>
   `).join("");
 }
 
-/** เปิด modal แก้ไขป้ายชื่อ/สีของระดับความสำคัญ (ไม่รองรับเพิ่ม/ลบ เพราะ id ถูกอ้างอิงตรง ๆ ในโค้ดหลายจุด) */
-function showEditPriorityModal(id, labelTh, color) {
+/** เปิด modal แก้ไขป้ายชื่อ/สี/SLA ของระดับความสำคัญ (ไม่รองรับเพิ่ม/ลบ เพราะ id ถูกอ้างอิงตรง ๆ ในโค้ดหลายจุด) */
+function showEditPriorityModal(id, labelTh, color, slaHours) {
   Swal.fire({
     title: `แก้ไขระดับความสำคัญ: ${id}`,
     html: `
@@ -397,7 +398,12 @@ function showEditPriorityModal(id, labelTh, color) {
         <label class="hwms-label" style="font-size:13px;">ชื่อ (ไทย)</label>
         <input type="text" id="swalPrioLabel" class="swal2-input" value="${labelTh}" style="margin:4px 0 12px;">
         <label class="hwms-label" style="font-size:13px;">สี</label>
-        <input type="color" id="swalPrioColor" value="${color}" style="width:100%; height:42px; border:1px solid var(--hwms-border); border-radius:8px; margin:4px 0;">
+        <input type="color" id="swalPrioColor" value="${color}" style="width:100%; height:42px; border:1px solid var(--hwms-border); border-radius:8px; margin:4px 0 12px;">
+        <label class="hwms-label" style="font-size:13px;">กำหนดเสร็จ (SLA) — ชั่วโมงหลังแจ้งงาน</label>
+        <input type="number" id="swalPrioSla" class="swal2-input" value="${slaHours}" min="1" style="margin:4px 0;">
+        <div style="font-size:11px; color:var(--hwms-text-muted); text-align:left; margin-top:4px;">
+          ระบบใช้ค่านี้คำนวณ "กำหนดเสร็จ" ของ ticket ใหม่ที่มีความสำคัญระดับนี้โดยอัตโนมัติ
+        </div>
       </div>
     `,
     confirmButtonText: "บันทึก",
@@ -408,16 +414,21 @@ function showEditPriorityModal(id, labelTh, color) {
     preConfirm: () => {
       const newLabel = document.getElementById("swalPrioLabel").value.trim();
       const newColor = document.getElementById("swalPrioColor").value;
+      const newSla = Number(document.getElementById("swalPrioSla").value);
       if (!newLabel) {
         Swal.showValidationMessage("กรุณากรอกชื่อ");
         return false;
       }
-      return { newLabel, newColor };
+      if (!newSla || newSla < 1) {
+        Swal.showValidationMessage("กรุณากรอกจำนวนชั่วโมง SLA ที่ถูกต้อง (มากกว่า 0)");
+        return false;
+      }
+      return { newLabel, newColor, newSla };
     }
   }).then(async (result) => {
     if (!result.isConfirmed) return;
     try {
-      await updatePriority(id, result.value.newLabel, result.value.newColor);
+      await updatePriority(id, result.value.newLabel, result.value.newColor, result.value.newSla);
       showToast("แก้ไขเรียบร้อยแล้ว");
       renderPriorityTable(getDB());
     } catch (err) {

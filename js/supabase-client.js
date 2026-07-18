@@ -27,6 +27,60 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+/* ================= IMAGE COMPRESSION ================= */
+
+/**
+ * บีบอัดรูปภาพฝั่ง client ก่อนอัปโหลด เพื่อประหยัดพื้นที่ Supabase Storage
+ * (free tier ให้แค่ 1GB รูปจากมือถือเดี๋ยวนี้มักมีขนาด 3-5MB ต่อรูป อัปโหลดตรง ๆ
+ * ไม่กี่สิบรูปก็เต็มพื้นที่แล้ว) ลดขนาดภาพให้ด้านยาวสุดไม่เกิน maxDimension px
+ * และบีบอัดเป็น JPEG คุณภาพตามที่กำหนด ไฟล์ที่ไม่ใช่รูปภาพ (เช่น PDF) จะคืนค่าเดิมไว้เฉย ๆ
+ */
+function compressImage(file, maxDimension = 1600, quality = 0.75) {
+  return new Promise((resolve) => {
+    if (!file.type.startsWith("image/")) {
+      resolve(file); // ไม่ใช่รูปภาพ (เช่น .pdf) ส่งคืนไฟล์เดิมไม่แตะต้อง
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      const img = new Image();
+      img.onload = function () {
+        let { width, height } = img;
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = Math.round(height * (maxDimension / width));
+            width = maxDimension;
+          } else {
+            width = Math.round(width * (maxDimension / height));
+            height = maxDimension;
+          }
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob((blob) => {
+          if (!blob) { resolve(file); return; } // เผื่อ toBlob ล้มเหลว ใช้ไฟล์เดิมแทน
+          const compressedFile = new File(
+            [blob],
+            file.name.replace(/\.\w+$/, ".jpg"),
+            { type: "image/jpeg" }
+          );
+          resolve(compressedFile);
+        }, "image/jpeg", quality);
+      };
+      img.onerror = () => resolve(file); // เผื่อไฟล์เสีย ใช้ไฟล์เดิมแทนไม่ให้ทั้งฟอร์มพัง
+      img.src = e.target.result;
+    };
+    reader.onerror = () => resolve(file);
+    reader.readAsDataURL(file);
+  });
+}
+
+
 /* ================= IN-MEMORY CACHE =================
  * โหลดข้อมูลอ้างอิง + tickets + users ทั้งหมดมาเก็บไว้ในตัวแปรนี้ครั้งเดียว
  * ตอนเข้าแอปแต่ละหน้า เพื่อให้หน้า UI เดิม (dashboard.js, ticket.js ฯลฯ)
@@ -76,7 +130,7 @@ async function loadAppData() {
 
   _cache.departments = (departments || []).map(d => ({ id: d.id, name: d.name, nameTh: d.name_th }));
   _cache.categories = (categories || []).map(c => ({ id: c.id, name: c.name, nameTh: c.name_th, icon: c.icon }));
-  _cache.priorities = (priorities || []).map(p => ({ id: p.id, label: p.label, labelTh: p.label_th, color: p.color }));
+  _cache.priorities = (priorities || []).map(p => ({ id: p.id, label: p.label, labelTh: p.label_th, color: p.color, slaHours: p.sla_hours || 24 }));
   _cache.statuses = (statuses || []).map(s => ({ id: s.id, label: s.label, labelTh: s.label_th, color: s.color }));
   _cache.locations = (locations || []).map(l => l.name);
   _cache.users = (profiles || []).map(mapProfileRow);
@@ -109,6 +163,17 @@ function mapProfileRow(row) {
     avatarColor: row.avatar_color,
     active: row.active,
     createdAt: row.created_at
+  };
+}
+
+/** แปลง row ของตาราง ticket_attachments ให้อยู่ในรูปแบบที่หน้า UI ใช้ พร้อม public URL */
+function mapAttachmentRow(a) {
+  return {
+    name: a.file_name,
+    size: a.file_size ? Math.round(a.file_size / 1024) + " KB" : "",
+    path: a.file_path,
+    type: a.attachment_type,
+    url: supabaseClient.storage.from("attachments").getPublicUrl(a.file_path).data.publicUrl
   };
 }
 
@@ -145,12 +210,9 @@ async function hydrateTicket(row, usersById) {
     requesterName: requester ? requester.fullName : "ไม่ทราบชื่อ",
     assignee: row.assignee_id,
     assigneeName: assignee ? assignee.fullName : "ยังไม่มอบหมาย",
-    attachments: (attachments || []).map(a => ({
-      name: a.file_name,
-      size: a.file_size ? Math.round(a.file_size / 1024) + " KB" : "",
-      path: a.file_path,
-      url: supabaseClient.storage.from("attachments").getPublicUrl(a.file_path).data.publicUrl
-    })),
+    attachments: (attachments || []).map(a => mapAttachmentRow(a)),
+    beforePhotos: (attachments || []).filter(a => a.attachment_type === "before").map(a => mapAttachmentRow(a)),
+    afterPhotos: (attachments || []).filter(a => a.attachment_type === "after").map(a => mapAttachmentRow(a)),
     createdDate: row.created_at,
     dueDate: row.due_date,
     timeline: (timeline || []).map(t => ({
@@ -343,6 +405,29 @@ async function adminResetPassword(targetUserId, newPassword) {
   return true;
 }
 
+/**
+ * บันทึกไฟล์ PDF ใบงานขึ้น Google Drive ผ่าน Edge Function "upload-to-drive"
+ * (ดูรายละเอียดการตั้งค่าใน supabase/functions/upload-to-drive/index.ts)
+ */
+async function uploadWorkOrderToGoogleDrive(ticketNo, base64Pdf) {
+  const { data: sessionData } = await supabaseClient.auth.getSession();
+  const accessToken = sessionData?.session?.access_token;
+  if (!accessToken) throw new Error("session หมดอายุ กรุณาเข้าสู่ระบบใหม่");
+
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/upload-to-drive`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${accessToken}`
+    },
+    body: JSON.stringify({ ticketNo, base64Pdf })
+  });
+
+  const result = await response.json();
+  if (!result.success) throw new Error(result.message || "บันทึกขึ้น Google Drive ไม่สำเร็จ");
+  return result.webViewLink;
+}
+
 /* ================= MUTATIONS (เขียนข้อมูลขึ้น Supabase แล้วอัปเดต cache) ================= */
 
 /**
@@ -353,7 +438,9 @@ async function adminResetPassword(targetUserId, newPassword) {
  */
 async function addTicket(ticketInput, user, files = []) {
   const now = new Date();
-  const dueDate = new Date(now.getTime() + 24 * 60 * 60000);
+  const priorityInfo = _cache.priorities.find(p => p.id === ticketInput.priority);
+  const slaHours = (priorityInfo && priorityInfo.slaHours) || 24;
+  const dueDate = new Date(now.getTime() + slaHours * 60 * 60000);
   const ticketNo = generateTicketNo();
   const ticketId = "T" + Date.now();
 
@@ -378,21 +465,31 @@ async function addTicket(ticketInput, user, files = []) {
     by_user_id: user.id
   });
 
-  for (const file of files) {
-    const path = `${ticketId}/${Date.now()}-${file.name}`;
+  await uploadTicketAttachments(ticketId, files, "before");
+
+  await loadAppData(); // รีเฟรช cache ให้ตรงกับฐานข้อมูลล่าสุด
+  return getTicketById(ticketId);
+}
+
+/**
+ * อัปโหลดไฟล์แนบของ ticket (บีบอัดรูปภาพก่อนเสมอ) แล้วบันทึก metadata ลงตาราง
+ * ticket_attachments พร้อมระบุประเภท 'before' (ตอนแจ้งงาน) หรือ 'after' (หลังแก้ไขเสร็จ)
+ */
+async function uploadTicketAttachments(ticketId, files, attachmentType) {
+  for (const originalFile of files) {
+    const file = await compressImage(originalFile);
+    const path = `${ticketId}/${attachmentType}-${Date.now()}-${file.name}`;
     const { error: uploadError } = await supabaseClient.storage.from("attachments").upload(path, file);
     if (!uploadError) {
       await supabaseClient.from("ticket_attachments").insert({
         ticket_id: ticketId,
         file_name: file.name,
         file_path: path,
-        file_size: file.size
+        file_size: file.size,
+        attachment_type: attachmentType
       });
     }
   }
-
-  await loadAppData(); // รีเฟรช cache ให้ตรงกับฐานข้อมูลล่าสุด
-  return getTicketById(ticketId);
 }
 
 /**
@@ -403,6 +500,11 @@ async function addTicket(ticketInput, user, files = []) {
 /**
  * เปลี่ยนสถานะ ticket พร้อมบันทึก timeline
  * @param {object} resolution - { cause, action } ใส่เฉพาะตอนเปลี่ยนเป็นสถานะ "resolved" เท่านั้น
+ */
+/**
+ * เปลี่ยนสถานะ ticket พร้อมบันทึก timeline
+ * @param {object} resolution - { cause, action, photos } ใส่เฉพาะตอนเปลี่ยนเป็นสถานะ "resolved" เท่านั้น
+ *   photos คือ array ของ File object (รูปถ่ายหลังดำเนินการแก้ไข ไม่บังคับ)
  */
 async function updateTicketStatus(id, newStatusId, byUser, resolution = null) {
   const updates = { status_id: newStatusId };
@@ -417,6 +519,11 @@ async function updateTicketStatus(id, newStatusId, byUser, resolution = null) {
     action: `เปลี่ยนสถานะเป็น "${getStatusInfo(newStatusId).labelTh}"`,
     by_user_id: byUser.id
   });
+
+  if (resolution && resolution.photos && resolution.photos.length > 0) {
+    await uploadTicketAttachments(id, resolution.photos, "after");
+  }
+
   await loadAppData();
   return getTicketById(id);
 }
@@ -580,8 +687,8 @@ async function deleteCategory(id) {
 }
 
 /** แก้ไขป้ายชื่อ/สีของระดับความสำคัญ (ไม่รองรับเพิ่ม/ลบ ดูหมายเหตุด้านบน) */
-async function updatePriority(id, labelTh, color) {
-  const { error } = await supabaseClient.from("priorities").update({ label_th: labelTh, color }).eq("id", id);
+async function updatePriority(id, labelTh, color, slaHours) {
+  const { error } = await supabaseClient.from("priorities").update({ label_th: labelTh, color, sla_hours: slaHours }).eq("id", id);
   if (error) throw error;
   await loadAppData();
 }

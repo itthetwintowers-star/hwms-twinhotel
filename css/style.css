@@ -769,37 +769,51 @@ table.hwms-table tbody tr:hover { background: var(--hwms-bg); }
   color: #fff;
 }
 
-/* ---------- Print (ใบสั่งงาน) ---------- */
-#printArea { display: none; }
+/* ---------- Print / Work Order (ใบสั่งงาน) ----------
+   หมายเหตุสำคัญ: จัด layout ของใบงาน (.print-header, .print-info-table ฯลฯ) ไว้เป็น
+   CSS ปกติ "นอก" @media print เพื่อให้ html2canvas (ใช้ตอนสร้างไฟล์ PDF ดาวน์โหลด/
+   ส่งขึ้น Google Drive) จับภาพได้ตรงกับหน้าตาที่พิมพ์จริงเป๊ะ — @media print
+   จึงมีหน้าที่แค่ "สลับการมองเห็น" ระหว่างแอปกับใบงานเท่านั้น ไม่ใช่กำหนดหน้าตา */
+
+#printArea {
+  display: none;
+  width: 794px; /* ความกว้างขนาด A4 ที่ 96dpi ใช้อ้างอิงตอน capture เป็นภาพ */
+  padding: 20px;
+  color: #0F172A;
+  font-family: "Noto Sans Thai", sans-serif;
+  background: #ffffff;
+}
+
+.print-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 2px solid #0F172A;
+  padding-bottom: 14px;
+  margin-bottom: 18px;
+}
+.print-hotel-name { font-size: 18px; font-weight: 800; }
+.print-doc-title { font-size: 14px; color: #475569; margin-top: 2px; }
+.print-info-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px; }
+.print-info-table td { border: 1px solid #CBD5E1; padding: 8px 10px; }
+.print-info-table td:first-child { width: 160px; font-weight: 700; background: #F1F5F9; }
+.print-section-title { font-weight: 700; font-size: 13px; margin-bottom: 6px; }
+.print-description { font-size: 13px; border: 1px solid #CBD5E1; padding: 12px; min-height: 50px; margin-bottom: 16px; white-space: pre-wrap; }
+.print-photos-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+.print-photos-row img { width: 130px; height: 100px; object-fit: cover; border: 1px solid #CBD5E1; border-radius: 4px; }
+.print-signature-row { display: flex; justify-content: space-between; gap: 20px; margin-top: 30px; page-break-inside: avoid; }
+.print-signature-box { flex: 1; text-align: center; font-size: 12px; }
+.print-signature-line { border-bottom: 1px solid #0F172A; height: 50px; margin-bottom: 6px; }
+#printQrcode img { width: 90px; height: 90px; display: block; }
 
 @media print {
-  body * { visibility: hidden; }
-  #printArea, #printArea * { visibility: visible; }
+  /* สำคัญ: ใช้ display:none (ไม่ใช่ visibility:hidden) เพื่อเอาความสูงของเนื้อหา
+     เดิมออกจาก document flow ทั้งหมด — ถ้าใช้ visibility:hidden เนื้อหาจะยังกิน
+     พื้นที่แนวตั้งอยู่ ทำให้เกิดหน้าที่ 2 ว่างเปล่าตามมาเสมอ (สาเหตุของปัญหาเดิม) */
+  body > *:not(#printArea) { display: none !important; }
+
   #printArea {
-    display: block;
-    position: absolute;
-    top: 0; left: 0;
+    display: block !important;
     width: 100%;
-    padding: 30px;
-    color: #0F172A;
-    font-family: "Noto Sans Thai", sans-serif;
   }
-  .print-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    border-bottom: 2px solid #0F172A;
-    padding-bottom: 14px;
-    margin-bottom: 18px;
-  }
-  .print-hotel-name { font-size: 18px; font-weight: 800; }
-  .print-doc-title { font-size: 14px; color: #475569; margin-top: 2px; }
-  .print-info-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px; }
-  .print-info-table td { border: 1px solid #CBD5E1; padding: 8px 10px; }
-  .print-info-table td:first-child { width: 160px; font-weight: 700; background: #F1F5F9; }
-  .print-section-title { font-weight: 700; font-size: 13px; margin-bottom: 6px; }
-  .print-description { font-size: 13px; border: 1px solid #CBD5E1; padding: 12px; min-height: 60px; margin-bottom: 30px; }
-  .print-signature-row { display: flex; justify-content: space-between; gap: 20px; margin-top: 40px; }
-  .print-signature-box { flex: 1; text-align: center; font-size: 12px; }
-  .print-signature-line { border-bottom: 1px solid #0F172A; height: 50px; margin-bottom: 6px; }
 }

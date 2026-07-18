@@ -226,17 +226,8 @@ function renderTicketDetail(ticket, currentUser) {
   document.getElementById("infoAssignee").textContent = ticket.assigneeName;
   document.getElementById("ticketDescription").textContent = ticket.description;
 
-  // ไฟล์แนบ
-  const attachWrap = document.getElementById("attachmentList");
-  if (ticket.attachments && ticket.attachments.length > 0) {
-    attachWrap.innerHTML = ticket.attachments.map(a => `
-      <a href="${a.url || '#'}" target="_blank" rel="noopener" class="hwms-badge hwms-badge-secondary" style="text-decoration:none;">
-        <i class="fa-solid fa-paperclip"></i> ${a.name} (${a.size})
-      </a>
-    `).join("");
-  } else {
-    attachWrap.innerHTML = `<span class="text-muted" style="font-size:13px;">ไม่มีไฟล์แนบ</span>`;
-  }
+  // รูปภาพ/ไฟล์แนบตอนแจ้งงาน (before)
+  renderAttachmentGallery("attachmentList", ticket.beforePhotos && ticket.beforePhotos.length ? ticket.beforePhotos : ticket.attachments);
 
   // Timeline
   const timelineWrap = document.getElementById("ticketTimeline");
@@ -254,12 +245,25 @@ function renderTicketDetail(ticket, currentUser) {
   document.getElementById("cancelTicketBtn").style.display =
     CANCEL_ALLOWED_STATUSES.includes(ticket.status) ? "inline-flex" : "none";
 
+  // เมนู "บันทึกไปยัง Google Drive" แสดงเฉพาะ ticket ที่ "เสร็จสิ้น" แล้วเท่านั้น
+  // (ใบงานยังไม่สมบูรณ์ถ้างานยังไม่จบ ไม่ควรอัปโหลดเก็บถาวรก่อนเวลา)
+  document.getElementById("saveToDriveMenuItem").style.display =
+    ticket.status === "completed" ? "block" : "none";
+
   // การ์ดสรุปการแก้ไขปัญหา (แสดงเฉพาะเมื่อมีการกรอกสาเหตุ/วิธีแก้ไขแล้ว)
   const resolutionCard = document.getElementById("resolutionSummaryCard");
   if (ticket.resolutionCause || ticket.resolutionAction) {
     resolutionCard.style.display = "block";
     document.getElementById("resolutionCauseDisplay").textContent = ticket.resolutionCause || "-";
     document.getElementById("resolutionActionDisplay").textContent = ticket.resolutionAction || "-";
+
+    const afterSection = document.getElementById("afterPhotosSection");
+    if (ticket.afterPhotos && ticket.afterPhotos.length > 0) {
+      afterSection.style.display = "block";
+      renderAttachmentGallery("afterPhotosGallery", ticket.afterPhotos);
+    } else {
+      afterSection.style.display = "none";
+    }
   } else {
     resolutionCard.style.display = "none";
   }
@@ -319,6 +323,8 @@ function renderStatusActionButtons(ticket, currentUser) {
   resolutionSection.style.display = "none";
   document.getElementById("resolutionCauseInput").value = "";
   document.getElementById("resolutionActionInput").value = "";
+  resolutionPhotoFiles = [];
+  document.getElementById("resolutionPhotoPreview").innerHTML = "";
 
   const nextSteps = STATUS_TRANSITIONS[ticket.status] || [];
 
@@ -340,6 +346,7 @@ function renderStatusActionButtons(ticket, currentUser) {
       if (step.requiresResolution) {
         // เปิดช่องกรอกสาเหตุ/วิธีแก้ไข แทนที่จะเปลี่ยนสถานะทันที
         resolutionSection.style.display = "block";
+        setupResolutionPhotoDropzone();
         document.getElementById("confirmResolvedBtn").onclick = async function () {
           const cause = document.getElementById("resolutionCauseInput").value.trim();
           const action = document.getElementById("resolutionActionInput").value.trim();
@@ -347,7 +354,7 @@ function renderStatusActionButtons(ticket, currentUser) {
             Swal.fire({ icon: "warning", title: "กรอกข้อมูลไม่ครบ", text: "กรุณากรอกทั้งสาเหตุและวิธีการแก้ไขปัญหา", confirmButtonColor: "#2563EB" });
             return;
           }
-          await performStatusChange(ticket.id, step.to, currentUser, { cause, action });
+          await performStatusChange(ticket.id, step.to, currentUser, { cause, action, photos: resolutionPhotoFiles });
         };
         return;
       }
@@ -355,6 +362,43 @@ function renderStatusActionButtons(ticket, currentUser) {
       await performStatusChange(ticket.id, step.to, currentUser);
     });
   });
+}
+
+/** ไฟล์รูปถ่ายหลังดำเนินการแก้ไขที่ผู้ใช้เลือกไว้ (รีเซ็ตทุกครั้งที่เปิด modal เปลี่ยนสถานะใหม่) */
+let resolutionPhotoFiles = [];
+
+/** ตั้งค่าปุ่ม/ช่องเลือกรูปถ่ายหลังดำเนินการแก้ไขใน modal เปลี่ยนสถานะ */
+function setupResolutionPhotoDropzone() {
+  const dropzone = document.getElementById("resolutionPhotoDropzone");
+  const fileInput = document.getElementById("resolutionPhotoInput");
+
+  // ล้าง listener เก่าก่อน (ป้องกันการซ้อนกันถ้าเปิด modal หลายรอบ) ด้วยการ clone element
+  const newDropzone = dropzone.cloneNode(true);
+  dropzone.parentNode.replaceChild(newDropzone, dropzone);
+  const newFileInput = newDropzone.querySelector("#resolutionPhotoInput");
+
+  newDropzone.addEventListener("click", () => newFileInput.click());
+  newFileInput.addEventListener("change", () => {
+    resolutionPhotoFiles.push(...Array.from(newFileInput.files));
+    renderResolutionPhotoPreview();
+  });
+}
+
+/** วาดรูปตัวอย่างของรูปถ่ายหลังดำเนินการแก้ไขที่เลือกไว้ พร้อมปุ่มลบ */
+function renderResolutionPhotoPreview() {
+  const wrap = document.getElementById("resolutionPhotoPreview");
+  wrap.innerHTML = resolutionPhotoFiles.map((f, idx) => `
+    <span class="hwms-badge hwms-badge-secondary">
+      <i class="fa-solid fa-image"></i> ${f.name}
+      <i class="fa-solid fa-xmark ms-1" style="cursor:pointer;" onclick="removeResolutionPhoto(${idx})"></i>
+    </span>
+  `).join("");
+}
+
+/** ลบรูปถ่ายหลังดำเนินการแก้ไขออกจากรายการที่เลือกไว้ */
+function removeResolutionPhoto(idx) {
+  resolutionPhotoFiles.splice(idx, 1);
+  renderResolutionPhotoPreview();
 }
 
 /** ดำเนินการเปลี่ยนสถานะจริง (เรียกจากปุ่ม step หรือปุ่มยืนยันหลังกรอกสาเหตุ/วิธีแก้ไข) */
@@ -592,6 +636,32 @@ function changeTicketPage(page) {
   renderTicketsTable();
 }
 
+/**
+ * วาดแกลเลอรีไฟล์แนบ: รูปภาพแสดงเป็น thumbnail คลิกเพื่อดูขนาดเต็ม, ไฟล์อื่น (เช่น PDF)
+ * แสดงเป็น badge ให้คลิกเปิดในแท็บใหม่แทน
+ */
+function renderAttachmentGallery(containerId, files) {
+  const wrap = document.getElementById(containerId);
+  if (!wrap) return;
+
+  if (!files || files.length === 0) {
+    wrap.innerHTML = `<span class="text-muted" style="font-size:13px;">ไม่มีไฟล์แนบ</span>`;
+    return;
+  }
+
+  wrap.innerHTML = files.map(f => {
+    const isImage = /\.(jpe?g|png|gif|webp)$/i.test(f.name || "");
+    if (isImage) {
+      return `<a href="${f.url || '#'}" target="_blank" rel="noopener">
+        <img src="${f.url}" alt="${f.name}" style="width:90px; height:90px; object-fit:cover; border-radius:8px; border:1px solid var(--hwms-border);">
+      </a>`;
+    }
+    return `<a href="${f.url || '#'}" target="_blank" rel="noopener" class="hwms-badge hwms-badge-secondary" style="text-decoration:none;">
+      <i class="fa-solid fa-paperclip"></i> ${f.name} (${f.size})
+    </a>`;
+  }).join("");
+}
+
 /** วาดรายการความคิดเห็นของ Ticket */
 function renderComments(ticket) {
   const wrap = document.getElementById("commentsList");
@@ -620,11 +690,15 @@ function renderComments(ticket) {
  * QR Code เข้ารหัส URL ของหน้า ticket-detail.html นี้ (พร้อม ?id=...) เพื่อให้
  * สแกนแล้วเปิดกลับมาที่ ticket ใบนี้ได้ทันที
  */
-function printTicketWorkOrder() {
+/**
+ * เติมข้อมูลทั้งหมดลงในใบสั่งงาน #printArea (ใช้ร่วมกันทั้งพิมพ์, ดาวน์โหลด PDF,
+ * และบันทึกขึ้น Google Drive) คืนค่า true ถ้าสำเร็จ, false ถ้ายังไม่มีข้อมูล ticket
+ */
+async function populatePrintArea() {
   const ticket = _currentTicketDetail;
   if (!ticket) {
     Swal.fire({ icon: "warning", title: "ยังโหลดข้อมูลไม่เสร็จ", text: "กรุณารอสักครู่แล้วลองใหม่อีกครั้ง", confirmButtonColor: "#2563EB" });
-    return;
+    return false;
   }
 
   const db = getDB();
@@ -644,17 +718,172 @@ function printTicketWorkOrder() {
   document.getElementById("printDue").textContent = formatThaiDateTime(ticket.dueDate);
   document.getElementById("printDescription").textContent = ticket.description;
 
-  // สร้าง QR Code ใหม่ทุกครั้ง (ลบของเดิมก่อน กันซ้อนกันเวลากดพิมพ์หลายรอบ)
-  const qrContainer = document.getElementById("printQrcode");
-  qrContainer.innerHTML = "";
-  new QRCode(qrContainer, {
-    text: window.location.href,
-    width: 90,
-    height: 90,
-    colorDark: "#0F172A",
-    colorLight: "#ffffff"
-  });
+  // รูปภาพตอนแจ้งงาน
+  const beforePhotos = (ticket.beforePhotos && ticket.beforePhotos.length) ? ticket.beforePhotos : ticket.attachments;
+  const beforeSection = document.getElementById("printBeforePhotosSection");
+  if (beforePhotos && beforePhotos.length > 0) {
+    beforeSection.style.display = "block";
+    document.getElementById("printBeforePhotos").innerHTML = beforePhotos
+      .filter(f => /\.(jpe?g|png|gif|webp)$/i.test(f.name || ""))
+      .map(f => `<img src="${f.url}" crossorigin="anonymous">`).join("");
+  } else {
+    beforeSection.style.display = "none";
+  }
 
-  // หน่วงเล็กน้อยให้ QR code วาดเสร็จก่อนค่อยเปิดหน้าต่างพิมพ์
-  setTimeout(() => window.print(), 200);
+  // สาเหตุ + วิธีการแก้ไข (แสดงเฉพาะเมื่อมีข้อมูลแล้ว)
+  const resolutionSection = document.getElementById("printResolutionSection");
+  if (ticket.resolutionCause || ticket.resolutionAction) {
+    resolutionSection.style.display = "block";
+    document.getElementById("printResolutionCause").textContent = ticket.resolutionCause || "-";
+    document.getElementById("printResolutionAction").textContent = ticket.resolutionAction || "-";
+  } else {
+    resolutionSection.style.display = "none";
+  }
+
+  // รูปภาพหลังดำเนินการแก้ไข
+  const afterSection = document.getElementById("printAfterPhotosSection");
+  if (ticket.afterPhotos && ticket.afterPhotos.length > 0) {
+    afterSection.style.display = "block";
+    document.getElementById("printAfterPhotos").innerHTML = ticket.afterPhotos
+      .map(f => `<img src="${f.url}" crossorigin="anonymous">`).join("");
+  } else {
+    afterSection.style.display = "none";
+  }
+
+  // สร้าง QR Code ด้วย library "qrcode" (เชื่อถือได้กว่าตัวเดิม) เป็น data URL แล้วฝังเป็น <img>
+  // encode URL แบบเต็ม (absolute) เสมอ เพื่อให้สแกนแล้วเปิดเว็บได้ตรง ไม่ใช่ path สัมพัทธ์
+  const qrContainer = document.getElementById("printQrcode");
+  try {
+    const qrDataUrl = await QRCode.toDataURL(window.location.href, {
+      width: 180, // สร้างใหญ่กว่าที่แสดงจริง (แสดง 90px ใน CSS) เพื่อความคมชัดตอนพิมพ์
+      margin: 1,
+      color: { dark: "#0F172A", light: "#FFFFFF" }
+    });
+    qrContainer.innerHTML = `<img src="${qrDataUrl}" alt="QR Code">`;
+  } catch (err) {
+    console.error("สร้าง QR Code ไม่สำเร็จ:", err);
+    qrContainer.innerHTML = "";
+  }
+
+  // รอให้รูปภาพทั้งหมดใน printArea โหลดเสร็จก่อน (สำคัญมากสำหรับการพิมพ์/แปลงเป็น PDF
+  // ให้ครบถ้วน ไม่งั้นรูปที่ยังโหลดไม่เสร็จจะหายไปตอนพิมพ์)
+  await waitForImagesToLoad(document.getElementById("printArea"));
+
+  return true;
+}
+
+/** รอให้ <img> ทุกตัวในภาชนะที่กำหนดโหลดเสร็จ (หรือ error) ก่อนไปขั้นตอนถัดไป */
+function waitForImagesToLoad(container) {
+  const images = Array.from(container.querySelectorAll("img"));
+  return Promise.all(images.map(img => {
+    if (img.complete) return Promise.resolve();
+    return new Promise(resolve => {
+      img.onload = resolve;
+      img.onerror = resolve; // ไม่บล็อกทั้งหน้าถ้ารูปใดรูปหนึ่งโหลดไม่สำเร็จ
+    });
+  }));
+}
+
+/** พิมพ์ใบงาน (เปิดหน้าต่างพิมพ์ของเบราว์เซอร์ เลือก "Save as PDF" เพื่อบันทึกเป็นไฟล์ได้) */
+async function printTicketWorkOrder() {
+  showLoading();
+  const ready = await populatePrintArea();
+  hideLoading();
+  if (!ready) return;
+  window.print();
+}
+
+/** ดาวน์โหลดใบงานเป็นไฟล์ PDF โดยตรง (ใช้ html2canvas แปลง printArea เป็นภาพ แล้วฝังลง PDF) */
+async function downloadTicketPdf() {
+  showLoading();
+  try {
+    const blob = await generateWorkOrderPdfBlob();
+    hideLoading();
+    const ticket = _currentTicketDetail;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${ticket.ticketNo}-work-order.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    hideLoading();
+    console.error(err);
+    Swal.fire({ icon: "error", title: "สร้าง PDF ไม่สำเร็จ", text: "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง", confirmButtonColor: "#EF4444" });
+  }
+}
+
+/**
+ * แปลง #printArea เป็นไฟล์ PDF (Blob) ด้วย html2canvas + jsPDF
+ * ใช้วิธี "ถ่ายภาพหน้าจอ" ของ DOM แทนการวาดข้อความลง PDF ตรง ๆ เพื่อเลี่ยงปัญหา
+ * ฟอนต์ภาษาไทยเพี้ยนใน jsPDF (jsPDF ไม่มีฟอนต์ไทยในตัว ต้องฝังเองซึ่งไฟล์ใหญ่มาก)
+ * วิธีนี้ใช้ฟอนต์ที่เบราว์เซอร์ render อยู่แล้วโดยตรง จึงถูกต้อง 100% เสมอ
+ */
+async function generateWorkOrderPdfBlob() {
+  const ready = await populatePrintArea();
+  if (!ready) throw new Error("ไม่พร้อมสร้าง PDF");
+
+  const printArea = document.getElementById("printArea");
+  const originalDisplay = printArea.style.display;
+  printArea.style.display = "block"; // html2canvas ต้อง element มองเห็นได้ (ไม่ใช่ display:none) ถึงจะ capture ได้
+
+  const canvas = await html2canvas(printArea, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+  printArea.style.display = originalDisplay;
+
+  const imgData = canvas.toDataURL("image/jpeg", 0.92);
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: "portrait", unit: "px", format: "a4" });
+
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const imgHeight = (canvas.height * pageWidth) / canvas.width;
+
+  let heightLeft = imgHeight;
+  let position = 0;
+
+  // ถ้าเนื้อหายาวเกินหนึ่งหน้า A4 ให้ตัดต่อหน้าถัดไปอัตโนมัติ (รองรับ ticket ที่มีรูปภาพเยอะ)
+  pdf.addImage(imgData, "JPEG", 0, position, pageWidth, imgHeight);
+  heightLeft -= pageHeight;
+
+  while (heightLeft > 0) {
+    position -= pageHeight;
+    pdf.addPage();
+    pdf.addImage(imgData, "JPEG", 0, position, pageWidth, imgHeight);
+    heightLeft -= pageHeight;
+  }
+
+  return pdf.output("blob");
+}
+
+/**
+ * บันทึกใบงาน (PDF) ขึ้น Google Drive โฟลเดอร์ที่กำหนดไว้ล่วงหน้า ผ่าน Edge Function
+ * (ใช้ Google Service Account ฝั่งเซิร์ฟเวอร์ ไม่ฝัง credential ใด ๆ ใน frontend)
+ * ใช้ได้เฉพาะ ticket ที่ "เสร็จสิ้น" แล้วเท่านั้น (ปุ่มจะถูกซ่อนไว้ก่อนหน้านั้น)
+ */
+async function handleSaveToGoogleDrive() {
+  const ticket = _currentTicketDetail;
+  if (!ticket) return;
+
+  showLoading();
+  try {
+    const blob = await generateWorkOrderPdfBlob();
+    const base64Pdf = await blobToBase64(blob);
+    await uploadWorkOrderToGoogleDrive(ticket.ticketNo, base64Pdf);
+    hideLoading();
+    Swal.fire({ icon: "success", title: "บันทึกสำเร็จ", text: `บันทึกใบงาน ${ticket.ticketNo} ไปยัง Google Drive เรียบร้อยแล้ว`, confirmButtonColor: "#2563EB" });
+  } catch (err) {
+    hideLoading();
+    console.error(err);
+    Swal.fire({ icon: "error", title: "บันทึกไม่สำเร็จ", text: err.message || "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง", confirmButtonColor: "#EF4444" });
+  }
+}
+
+/** แปลง Blob เป็น base64 string (ไม่รวม data:...;base64, prefix) สำหรับส่งให้ Edge Function */
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 }
