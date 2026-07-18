@@ -34,7 +34,10 @@ document.addEventListener("DOMContentLoaded", async function () {
 /** คำนวณและแสดงการ์ดสรุปสถานะงานทั้ง 4 ประเภท */
 function renderStatCards(tickets) {
   const newCount = tickets.filter(t => t.status === "new").length;
-  const inProgressCount = tickets.filter(t => t.status === "in_progress" || t.status === "accepted").length;
+  // "กำลังดำเนินการ" ในความหมายของภาพรวม Dashboard = ทุกสถานะที่ยังไม่ปิดงานและไม่ใช่งานใหม่
+  const inProgressCount = tickets.filter(t =>
+    ["accepted", "in_progress", "pending", "resolved", "reviewing"].includes(t.status)
+  ).length;
   const completedCount = tickets.filter(t => t.status === "completed").length;
   const overdueCount = tickets.filter(t => t.overdue).length;
 

@@ -158,9 +158,10 @@
             <div class="hwms-card hwms-card-body">
               <h2 style="font-size:15px;" class="mb-3">ข้อมูลบริษัท / โรงแรม</h2>
               <div class="d-flex align-items-center gap-3 mb-4">
-                <div class="hwms-login-logo m-0"><i class="fa-solid fa-hotel"></i></div>
+                <div class="hwms-login-logo m-0" id="companyLogoPreview"><i class="fa-solid fa-hotel"></i></div>
                 <div>
-                  <button class="btn btn-hwms-outline btn-sm">อัปโหลดโลโก้ใหม่</button>
+                  <button type="button" class="btn btn-hwms-outline btn-sm" id="uploadLogoBtn">อัปโหลดโลโก้ใหม่</button>
+                  <input type="file" id="logoFileInput" class="d-none" accept=".png,.jpg,.jpeg">
                   <div style="font-size:11px; color:var(--hwms-text-muted);" class="mt-1">รองรับไฟล์ PNG, JPG ขนาดไม่เกิน 2MB</div>
                 </div>
               </div>

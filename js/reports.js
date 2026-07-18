@@ -113,7 +113,11 @@ function renderReportCharts(tickets) {
 
   const db = getDB();
 
-  // สัดส่วนสถานะ
+  // สัดส่วนสถานะ (ใช้สีจริงของแต่ละสถานะจากฐานข้อมูล แทนสีตายตัว เผื่อมีการเพิ่ม/แก้สถานะภายหลัง)
+  const statusColorMap = {
+    primary: "#2563EB", info: "#06B6D4", warning: "#F59E0B",
+    secondary: "#94A3B8", success: "#22C55E", danger: "#EF4444"
+  };
   const statusCounts = db.statuses.map(s => tickets.filter(t => t.status === s.id).length);
   reportCharts.status = new Chart(document.getElementById("reportStatusChart"), {
     type: "pie",
@@ -121,7 +125,7 @@ function renderReportCharts(tickets) {
       labels: db.statuses.map(s => s.labelTh),
       datasets: [{
         data: statusCounts,
-        backgroundColor: ["#2563EB", "#06B6D4", "#F59E0B", "#94A3B8", "#22C55E", "#EF4444"],
+        backgroundColor: db.statuses.map(s => statusColorMap[s.color] || "#94A3B8"),
         borderWidth: 0
       }]
     },

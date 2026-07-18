@@ -42,6 +42,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     try {
       await updateCompanyProfile({ hotelName, phone, address, themeColor });
+      applyCompanyTheme(getDB().companyProfile);
       showToast("บันทึกข้อมูลบริษัทเรียบร้อยแล้ว");
     } catch (err) {
       console.error(err);
@@ -51,7 +52,40 @@ document.addEventListener("DOMContentLoaded", async function () {
 
   renderCompanyProfileForm(db);
   setupThemeSwatches();
+  setupLogoUpload();
 });
+
+/** ตั้งค่าปุ่มอัปโหลดโลโก้บริษัท ให้เปิด file picker แล้วอัปโหลดขึ้น Supabase Storage จริง */
+function setupLogoUpload() {
+  const uploadBtn = document.getElementById("uploadLogoBtn");
+  const fileInput = document.getElementById("logoFileInput");
+
+  uploadBtn.addEventListener("click", () => fileInput.click());
+
+  fileInput.addEventListener("change", async function () {
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      Swal.fire({ icon: "warning", title: "ไฟล์ใหญ่เกินไป", text: "กรุณาเลือกไฟล์ขนาดไม่เกิน 2MB", confirmButtonColor: "#2563EB" });
+      fileInput.value = "";
+      return;
+    }
+
+    showLoading();
+    try {
+      const url = await uploadCompanyLogo(file);
+      hideLoading();
+      document.getElementById("companyLogoPreview").innerHTML = `<img src="${url}" alt="โลโก้" style="width:100%; height:100%; object-fit:cover; border-radius:inherit;">`;
+      showToast("อัปโหลดโลโก้เรียบร้อยแล้ว");
+    } catch (err) {
+      hideLoading();
+      console.error(err);
+      Swal.fire({ icon: "error", title: "อัปโหลดไม่สำเร็จ", text: "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง", confirmButtonColor: "#EF4444" });
+    }
+    fileInput.value = "";
+  });
+}
 
 /** ตั้งค่าการทำงานของเมนูแท็บด้านซ้ายของหน้าตั้งค่า */
 function setupSettingsTabs() {
@@ -198,6 +232,10 @@ function renderCompanyProfileForm(db) {
   document.getElementById("companyAddress").value = company.address || "";
   document.getElementById("companyThemeColor").value = company.themeColor || "#2563EB";
   highlightSelectedSwatch(company.themeColor || "#2563EB");
+
+  if (company.logoPath) {
+    document.getElementById("companyLogoPreview").innerHTML = `<img src="${company.logoPath}" alt="โลโก้" style="width:100%; height:100%; object-fit:cover; border-radius:inherit;">`;
+  }
 }
 
 /** ทำให้คลิกเลือกสี swatch แล้วอัปเดตช่อง hidden input + ไฮไลต์สีที่เลือก */

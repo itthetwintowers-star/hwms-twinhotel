@@ -754,6 +754,21 @@ table.hwms-table tbody tr:hover { background: var(--hwms-bg); }
   .hwms-login-card { padding: 28px 22px; }
 }
 
+.scope-btn {
+  background: var(--hwms-surface);
+  border: 1px solid var(--hwms-border);
+  color: var(--hwms-text-muted);
+  transition: var(--hwms-transition);
+}
+
+.scope-btn:hover { background: var(--hwms-secondary-light); }
+
+.scope-btn.active {
+  background: var(--hwms-primary);
+  border-color: var(--hwms-primary);
+  color: #fff;
+}
+
 /* ---------- Print (ใบสั่งงาน) ---------- */
 #printArea { display: none; }
 

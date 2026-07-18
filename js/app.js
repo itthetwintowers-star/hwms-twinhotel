@@ -70,7 +70,6 @@ const HWMS_NAV_ITEMS = [
   { key: "new-ticket", icon: "fa-square-plus", label: "แจ้งงาน", href: "new-ticket.html" },
   { key: "tickets", icon: "fa-list-check", label: "ติดตามงาน", href: "tickets.html" },
   { key: "reports", icon: "fa-chart-column", label: "รายงาน", href: "reports.html" },
-  { key: "users", icon: "fa-users", label: "ผู้ใช้งาน", href: "settings.html#users" },
   { key: "settings", icon: "fa-gear", label: "ตั้งค่า", href: "settings.html" }
 ];
 
@@ -233,6 +232,9 @@ async function initLayout(activeKey, pageTitle) {
   // โหลดข้อมูลทั้งหมดจาก Supabase มาไว้ใน cache ก่อนวาดหน้าใด ๆ
   await loadAppData();
 
+  // ใช้สีธีมที่บันทึกไว้ในข้อมูลบริษัท (ถ้ามี) กับทั้งแอปทันที
+  applyCompanyTheme(getDB().companyProfile);
+
   // เริ่มติดตามการเปลี่ยนแปลงของ ticket แบบเรียลไทม์ (แจ้งเตือนสดเมื่อมีงานใหม่)
   subscribeRealtimeTickets(user);
 
@@ -303,6 +305,18 @@ function getQueryParam(name) {
   return params.get(name);
 }
 
+/** เติม option ให้ select จาก array ของ object (ใช้ร่วมกันหลายหน้า: new-ticket, reports, settings) */
+function fillSelect(elementId, items, valueField, labelField) {
+  const select = document.getElementById(elementId);
+  if (!select) return;
+  items.forEach(item => {
+    const opt = document.createElement("option");
+    opt.value = item[valueField];
+    opt.textContent = item[labelField];
+    select.appendChild(opt);
+  });
+}
+
 /* ================= DARK MODE ================= */
 
 /** สลับโหมดกลางวัน/กลางคืน และจดจำค่าไว้ใน localStorage */
@@ -320,6 +334,55 @@ function toggleDarkMode() {
     localStorage.setItem("hwms_theme", "dark");
     if (icon) icon.className = "fa-solid fa-sun";
   }
+}
+
+/* ================= COMPANY THEME COLOR ================= */
+
+/**
+ * นำสีธีมที่ตั้งไว้ในหน้าตั้งค่า > ข้อมูลบริษัท มาใช้จริงกับทั้งแอป
+ * โดยเซ็ต CSS variable --hwms-primary (และเฉดอ่อน/เข้ม) ที่ <html> โดยตรง
+ * ซึ่งจะ override ค่า default ใน style.css ทันทีทุกหน้าที่เรียก initLayout()
+ */
+function applyCompanyTheme(companyProfile) {
+  const color = companyProfile && companyProfile.themeColor;
+  if (!color) return;
+
+  const root = document.documentElement;
+  root.style.setProperty("--hwms-primary", color);
+  root.style.setProperty("--hwms-primary-dark", shadeHexColor(color, -18));
+  root.style.setProperty("--hwms-primary-light", shadeHexColor(color, 82));
+}
+
+/** ปรับสี hex ให้อ่อนลง/เข้มขึ้น percent: บวก = อ่อนลง(ผสมขาว), ลบ = เข้มขึ้น */
+function shadeHexColor(hex, percent) {
+  const { r, g, b } = hexToRgb(hex);
+  let nr, ng, nb;
+  if (percent >= 0) {
+    nr = Math.round(r + (255 - r) * (percent / 100));
+    ng = Math.round(g + (255 - g) * (percent / 100));
+    nb = Math.round(b + (255 - b) * (percent / 100));
+  } else {
+    nr = Math.round(r * (1 + percent / 100));
+    ng = Math.round(g * (1 + percent / 100));
+    nb = Math.round(b * (1 + percent / 100));
+  }
+  return rgbToHex(clampByte(nr), clampByte(ng), clampByte(nb));
+}
+
+function hexToRgb(hex) {
+  const clean = hex.replace("#", "");
+  const bigint = parseInt(clean.length === 3
+    ? clean.split("").map(c => c + c).join("")
+    : clean, 16);
+  return { r: (bigint >> 16) & 255, g: (bigint >> 8) & 255, b: bigint & 255 };
+}
+
+function rgbToHex(r, g, b) {
+  return "#" + [r, g, b].map(v => v.toString(16).padStart(2, "0")).join("");
+}
+
+function clampByte(v) {
+  return Math.max(0, Math.min(255, v));
 }
 
 /* ================= CHANGE PASSWORD ================= */

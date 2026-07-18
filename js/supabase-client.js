@@ -123,7 +123,10 @@ async function hydrateTicket(row, usersById) {
   const requester = usersById[row.requester_id];
   const assignee = row.assignee_id ? usersById[row.assignee_id] : null;
   const dueDate = row.due_date ? new Date(row.due_date) : null;
-  const overdue = dueDate ? (dueDate < new Date() && !["completed", "cancelled"].includes(row.status_id)) : false;
+  // งานที่ "แก้ไขแล้ว/รอตรวจสอบ/เสร็จสิ้น/ยกเลิก" ไม่นับว่าเกินกำหนดอีกต่อไป
+  // เพราะไม่มีงานที่ต้องทำเพิ่มแล้ว (รอแค่ผู้แจ้งยืนยันหรือปิดงานเท่านั้น)
+  const closedStatuses = ["completed", "cancelled", "resolved", "reviewing"];
+  const overdue = dueDate ? (dueDate < new Date() && !closedStatuses.includes(row.status_id)) : false;
 
   return {
     id: row.id,
@@ -136,6 +139,8 @@ async function hydrateTicket(row, usersById) {
     status: row.status_id,
     overdue,
     description: row.description,
+    resolutionCause: row.resolution_cause,
+    resolutionAction: row.resolution_action,
     requester: row.requester_id,
     requesterName: requester ? requester.fullName : "ไม่ทราบชื่อ",
     assignee: row.assignee_id,
@@ -395,8 +400,18 @@ async function addTicket(ticketInput, user, files = []) {
  * @param {string} id - ticket id
  * @param {object} changes - { status?, assignee?, timelineAction?, byUser? }
  */
-async function updateTicketStatus(id, newStatusId, byUser) {
-  await supabaseClient.from("tickets").update({ status_id: newStatusId }).eq("id", id);
+/**
+ * เปลี่ยนสถานะ ticket พร้อมบันทึก timeline
+ * @param {object} resolution - { cause, action } ใส่เฉพาะตอนเปลี่ยนเป็นสถานะ "resolved" เท่านั้น
+ */
+async function updateTicketStatus(id, newStatusId, byUser, resolution = null) {
+  const updates = { status_id: newStatusId };
+  if (resolution) {
+    updates.resolution_cause = resolution.cause;
+    updates.resolution_action = resolution.action;
+  }
+
+  await supabaseClient.from("tickets").update(updates).eq("id", id);
   await supabaseClient.from("ticket_timeline").insert({
     ticket_id: id,
     action: `เปลี่ยนสถานะเป็น "${getStatusInfo(newStatusId).labelTh}"`,
@@ -603,4 +618,32 @@ async function updateCompanyProfile({ hotelName, phone, address, themeColor }) {
     .eq("id", 1);
   if (error) throw error;
   await loadAppData();
+}
+
+/**
+ * อัปโหลดโลโก้บริษัทขึ้น Supabase Storage (bucket "attachments") แล้วบันทึก URL
+ * ลงในตาราง company_profile ทันที ใช้ path คงที่ (logo.<นามสกุล>) พร้อม upsert
+ * เพื่อให้อัปโหลดใหม่ทับของเดิมได้เรื่อย ๆ โดยไม่มีไฟล์เก่าตกค้าง
+ */
+async function uploadCompanyLogo(file) {
+  const ext = file.name.split(".").pop().toLowerCase();
+  const path = `company-logo/logo.${ext}`;
+
+  const { error: uploadError } = await supabaseClient.storage
+    .from("attachments")
+    .upload(path, file, { upsert: true });
+  if (uploadError) throw uploadError;
+
+  const { data: urlData } = supabaseClient.storage.from("attachments").getPublicUrl(path);
+  // เติม timestamp ต่อท้าย URL กัน browser cache รูปเก่าไว้ (public URL เดิมไม่เปลี่ยนตาม path)
+  const publicUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+
+  const { error: updateError } = await supabaseClient
+    .from("company_profile")
+    .update({ logo_path: publicUrl })
+    .eq("id", 1);
+  if (updateError) throw updateError;
+
+  await loadAppData();
+  return publicUrl;
 }

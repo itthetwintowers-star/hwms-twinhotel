@@ -11,6 +11,39 @@
 
 let attachedFiles = [];
 
+/**
+ * แผนผังลำดับสถานะงาน (workflow) — กำหนดว่าจากสถานะปัจจุบัน ไปสถานะถัดไปได้อะไรบ้าง
+ * requiresResolution: true หมายถึงต้องกรอกสาเหตุ+วิธีแก้ไขก่อนถึงจะเปลี่ยนได้
+ */
+const STATUS_TRANSITIONS = {
+  new: [
+    { to: "accepted", label: "รับงาน", icon: "fa-hand" }
+  ],
+  accepted: [
+    { to: "in_progress", label: "เริ่มดำเนินการ", icon: "fa-play" }
+  ],
+  in_progress: [
+    { to: "pending", label: "รอดำเนินการ", icon: "fa-pause" },
+    { to: "resolved", label: "ดำเนินการแก้ไขแล้ว", icon: "fa-check", requiresResolution: true }
+  ],
+  pending: [
+    { to: "in_progress", label: "กลับมาดำเนินการ", icon: "fa-play" },
+    { to: "resolved", label: "ดำเนินการแก้ไขแล้ว", icon: "fa-check", requiresResolution: true }
+  ],
+  resolved: [
+    { to: "reviewing", label: "ส่งให้ผู้แจ้งตรวจสอบ", icon: "fa-magnifying-glass" }
+  ],
+  reviewing: [
+    { to: "in_progress", label: "งานไม่เรียบร้อย — กลับไปแก้ไข", icon: "fa-rotate-left" },
+    { to: "completed", label: "ผ่าน — ปิดงาน", icon: "fa-flag-checkered" }
+  ],
+  completed: [],
+  cancelled: []
+};
+
+// ยกเลิกงานได้เฉพาะก่อนเริ่มดำเนินการเท่านั้น (งานใหม่ / รับงานแล้ว)
+const CANCEL_ALLOWED_STATUSES = ["new", "accepted"];
+
 document.addEventListener("DOMContentLoaded", async function () {
   if (document.getElementById("newTicketForm")) {
     await initNewTicketPage();
@@ -75,17 +108,6 @@ async function initNewTicketPage() {
   document.getElementById("newTicketForm").addEventListener("submit", async function (e) {
     e.preventDefault();
     await submitNewTicket(user);
-  });
-}
-
-/** เติม option ให้ select จาก array ของ object */
-function fillSelect(elementId, items, valueField, labelField) {
-  const select = document.getElementById(elementId);
-  items.forEach(item => {
-    const opt = document.createElement("option");
-    opt.value = item[valueField];
-    opt.textContent = item[labelField];
-    select.appendChild(opt);
   });
 }
 
@@ -228,29 +250,25 @@ function renderTicketDetail(ticket, currentUser) {
   // Comments
   renderComments(ticket);
 
-  // Select ตัวเลือกในการเปลี่ยนสถานะ / มอบหมายงาน
-  const statusSelect = document.getElementById("changeStatusSelect");
-  statusSelect.innerHTML = db.statuses.map(s => `<option value="${s.id}" ${s.id === ticket.status ? "selected" : ""}>${s.labelTh}</option>`).join("");
+  // ปุ่ม "ยกเลิกงาน" แสดงเฉพาะตอนสถานะยังเป็นงานใหม่/รับงานแล้วเท่านั้น
+  document.getElementById("cancelTicketBtn").style.display =
+    CANCEL_ALLOWED_STATUSES.includes(ticket.status) ? "inline-flex" : "none";
+
+  // การ์ดสรุปการแก้ไขปัญหา (แสดงเฉพาะเมื่อมีการกรอกสาเหตุ/วิธีแก้ไขแล้ว)
+  const resolutionCard = document.getElementById("resolutionSummaryCard");
+  if (ticket.resolutionCause || ticket.resolutionAction) {
+    resolutionCard.style.display = "block";
+    document.getElementById("resolutionCauseDisplay").textContent = ticket.resolutionCause || "-";
+    document.getElementById("resolutionActionDisplay").textContent = ticket.resolutionAction || "-";
+  } else {
+    resolutionCard.style.display = "none";
+  }
+
+  // วาดปุ่มขั้นตอนเปลี่ยนสถานะแบบ workflow (แทนที่ dropdown เดิม)
+  renderStatusActionButtons(ticket, currentUser);
 
   const assigneeSelect = document.getElementById("assignTechnicianSelect");
   assigneeSelect.innerHTML = `<option value="">ไม่มอบหมาย</option>` + db.users.filter(u => u.active).map(u => `<option value="${u.id}" ${u.id === ticket.assignee ? "selected" : ""}>${u.fullName} (${getDepartmentName(u.department)})</option>`).join("");
-
-  // ปุ่มบันทึกการเปลี่ยนสถานะ
-  document.getElementById("saveStatusBtn").onclick = async function () {
-    const newStatus = statusSelect.value;
-    showLoading();
-    try {
-      const updated = await updateTicketStatus(ticket.id, newStatus, currentUser);
-      hideLoading();
-      showToast("อัปเดตสถานะเรียบร้อยแล้ว");
-      bootstrap.Modal.getInstance(document.getElementById("changeStatusModal")).hide();
-      renderTicketDetail(updated, currentUser);
-    } catch (err) {
-      hideLoading();
-      console.error(err);
-      showToast("อัปเดตสถานะไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "error");
-    }
-  };
 
   // ปุ่มบันทึกการมอบหมายงาน
   document.getElementById("saveAssignBtn").onclick = async function () {
@@ -288,6 +306,91 @@ function renderTicketDetail(ticket, currentUser) {
   };
 }
 
+/**
+ * วาดปุ่มขั้นตอนเปลี่ยนสถานะใน modal ตาม STATUS_TRANSITIONS ของสถานะปัจจุบัน
+ * ถ้าเลือกขั้นที่ requiresResolution=true (เช่น "ดำเนินการแก้ไขแล้ว") จะเปิดช่องกรอก
+ * สาเหตุ/วิธีแก้ไขให้กรอกก่อน แทนที่จะเปลี่ยนสถานะทันที
+ */
+function renderStatusActionButtons(ticket, currentUser) {
+  document.getElementById("currentStatusLabel").innerHTML = renderStatusBadge(ticket.status);
+
+  const wrap = document.getElementById("statusActionButtons");
+  const resolutionSection = document.getElementById("resolutionFieldsSection");
+  resolutionSection.style.display = "none";
+  document.getElementById("resolutionCauseInput").value = "";
+  document.getElementById("resolutionActionInput").value = "";
+
+  const nextSteps = STATUS_TRANSITIONS[ticket.status] || [];
+
+  if (nextSteps.length === 0) {
+    wrap.innerHTML = `<div class="text-muted" style="font-size:13px;">งานนี้อยู่ในสถานะสุดท้ายแล้ว ไม่สามารถเปลี่ยนสถานะต่อได้</div>`;
+    return;
+  }
+
+  wrap.innerHTML = nextSteps.map((step, idx) => `
+    <button type="button" class="btn btn-hwms-outline text-start" data-step-index="${idx}">
+      <i class="fa-solid ${step.icon} me-2"></i>${step.label}
+    </button>
+  `).join("");
+
+  wrap.querySelectorAll("button[data-step-index]").forEach(btn => {
+    btn.addEventListener("click", async function () {
+      const step = nextSteps[Number(this.dataset.stepIndex)];
+
+      if (step.requiresResolution) {
+        // เปิดช่องกรอกสาเหตุ/วิธีแก้ไข แทนที่จะเปลี่ยนสถานะทันที
+        resolutionSection.style.display = "block";
+        document.getElementById("confirmResolvedBtn").onclick = async function () {
+          const cause = document.getElementById("resolutionCauseInput").value.trim();
+          const action = document.getElementById("resolutionActionInput").value.trim();
+          if (!cause || !action) {
+            Swal.fire({ icon: "warning", title: "กรอกข้อมูลไม่ครบ", text: "กรุณากรอกทั้งสาเหตุและวิธีการแก้ไขปัญหา", confirmButtonColor: "#2563EB" });
+            return;
+          }
+          await performStatusChange(ticket.id, step.to, currentUser, { cause, action });
+        };
+        return;
+      }
+
+      await performStatusChange(ticket.id, step.to, currentUser);
+    });
+  });
+}
+
+/** ดำเนินการเปลี่ยนสถานะจริง (เรียกจากปุ่ม step หรือปุ่มยืนยันหลังกรอกสาเหตุ/วิธีแก้ไข) */
+async function performStatusChange(ticketId, newStatus, currentUser, resolution = null) {
+  showLoading();
+  try {
+    const updated = await updateTicketStatus(ticketId, newStatus, currentUser, resolution);
+    hideLoading();
+    showToast("อัปเดตสถานะเรียบร้อยแล้ว");
+    const modalEl = document.getElementById("changeStatusModal");
+    const modalInstance = bootstrap.Modal.getInstance(modalEl);
+    if (modalInstance) modalInstance.hide();
+    renderTicketDetail(updated, currentUser);
+  } catch (err) {
+    hideLoading();
+    console.error(err);
+    showToast("อัปเดตสถานะไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "error");
+  }
+}
+
+/** ยกเลิกงาน (กดได้เฉพาะตอนสถานะยังเป็นงานใหม่/รับงานแล้ว) */
+async function handleCancelTicket() {
+  const ticket = _currentTicketDetail;
+  if (!ticket) return;
+
+  const confirmed = await confirmAction(
+    "ยกเลิกงานนี้?",
+    `Ticket ${ticket.ticketNo} จะถูกยกเลิก การดำเนินการนี้ไม่สามารถย้อนกลับได้`,
+    "ยกเลิกงาน"
+  );
+  if (!confirmed) return;
+
+  const currentUser = getCurrentUser();
+  await performStatusChange(ticket.id, "cancelled", currentUser);
+}
+
 /* ================= TICKETS LIST PAGE ================= */
 
 let ticketListState = {
@@ -298,7 +401,8 @@ let ticketListState = {
   search: "",
   status: "",
   priority: "",
-  department: ""
+  department: "",
+  scope: "current" // "current" = เดือนนี้ + งานค้างจากเดือนก่อน, "all" = ทั้งหมด
 };
 
 /** ตั้งค่าเริ่มต้นของหน้าติดตามงาน (ตารางรายการ ticket) */
@@ -342,8 +446,19 @@ async function initTicketsListPage() {
     renderTicketsTable();
   });
 
+  document.querySelectorAll(".scope-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.scope === ticketListState.scope);
+    btn.addEventListener("click", function () {
+      ticketListState.scope = this.dataset.scope;
+      ticketListState.page = 1;
+      document.querySelectorAll(".scope-btn").forEach(b => b.classList.toggle("active", b === this));
+      renderTicketsTable();
+    });
+  });
+
   document.getElementById("resetFilterBtn").addEventListener("click", function () {
-    ticketListState = { page: 1, pageSize: 10, sortField: "createdDate", sortDir: "desc", search: "", status: "", priority: "", department: "" };
+    const keepScope = ticketListState.scope;
+    ticketListState = { page: 1, pageSize: 10, sortField: "createdDate", sortDir: "desc", search: "", status: "", priority: "", department: "", scope: keepScope };
     document.getElementById("searchInput").value = "";
     document.getElementById("filterStatus").value = "";
     document.getElementById("filterPriority").value = "";
@@ -375,6 +490,17 @@ async function initTicketsListPage() {
 /** กรอง เรียงลำดับ และแบ่งหน้ารายการ ticket ตาม state ปัจจุบัน แล้ววาดตาราง */
 function renderTicketsTable() {
   let tickets = getAllTickets();
+
+  if (ticketListState.scope === "current") {
+    const now = new Date();
+    const openStatuses = ["new", "accepted", "in_progress", "pending", "resolved", "reviewing"];
+    tickets = tickets.filter(t => {
+      const d = new Date(t.createdDate);
+      const isThisMonth = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+      const isLeftoverFromBefore = d < new Date(now.getFullYear(), now.getMonth(), 1) && openStatuses.includes(t.status);
+      return isThisMonth || isLeftoverFromBefore;
+    });
+  }
 
   if (ticketListState.search) {
     const q = ticketListState.search.toLowerCase();
