@@ -750,15 +750,15 @@ async function populatePrintArea() {
     afterSection.style.display = "none";
   }
 
-  // สร้าง QR Code ด้วย library "qrcode" (เชื่อถือได้กว่าตัวเดิม) เป็น data URL แล้วฝังเป็น <img>
+  // สร้าง QR Code ด้วย library "qrcode-generator" (เสถียรมาก โหลดจาก cdnjs, ทำงาน
+  // แบบ synchronous ไม่ต้องพึ่ง Promise/Canvas API ที่อาจมีปัญหาเรื่อง timing)
   // encode URL แบบเต็ม (absolute) เสมอ เพื่อให้สแกนแล้วเปิดเว็บได้ตรง ไม่ใช่ path สัมพัทธ์
   const qrContainer = document.getElementById("printQrcode");
   try {
-    const qrDataUrl = await QRCode.toDataURL(window.location.href, {
-      width: 180, // สร้างใหญ่กว่าที่แสดงจริง (แสดง 90px ใน CSS) เพื่อความคมชัดตอนพิมพ์
-      margin: 1,
-      color: { dark: "#0F172A", light: "#FFFFFF" }
-    });
+    const qr = qrcode(0, "M"); // typeNumber 0 = ให้เลือกขนาดที่พอดีอัตโนมัติ, M = error correction ระดับกลาง
+    qr.addData(window.location.href);
+    qr.make();
+    const qrDataUrl = qr.createDataURL(6, 2); // cellSize=6px, margin=2 modules -> ได้ภาพขนาด ~180px
     qrContainer.innerHTML = `<img src="${qrDataUrl}" alt="QR Code">`;
   } catch (err) {
     console.error("สร้าง QR Code ไม่สำเร็จ:", err);
