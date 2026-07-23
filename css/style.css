@@ -120,28 +120,6 @@
 [data-theme="dark"] table.hwms-table thead th { background: var(--hwms-bg); color: var(--hwms-text-muted); }
 [data-theme="dark"] .progress { background: var(--hwms-bg); }
 
-/* ---------- Print Work Order ---------- */
-#printWorkOrder { display: none; }
-
-@media print {
-  body * { visibility: hidden; }
-  #printWorkOrder, #printWorkOrder * { visibility: visible; }
-  #printWorkOrder {
-    display: block;
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%;
-    padding: 24px;
-    color: #000;
-    background: #fff;
-  }
-  .hwms-print-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #000; padding-bottom: 12px; margin-bottom: 16px; }
-  .hwms-print-qr { text-align: center; }
-  .hwms-print-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-  .hwms-print-table td { padding: 6px 8px; border: 1px solid #999; font-size: 13px; vertical-align: top; }
-  .hwms-print-table td:first-child { font-weight: 700; width: 160px; background: #f1f1f1; }
-}
-
 /* ---------- Base ---------- */
 * { box-sizing: border-box; }
 

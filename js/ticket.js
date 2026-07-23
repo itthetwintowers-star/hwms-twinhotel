@@ -245,11 +245,6 @@ function renderTicketDetail(ticket, currentUser) {
   document.getElementById("cancelTicketBtn").style.display =
     CANCEL_ALLOWED_STATUSES.includes(ticket.status) ? "inline-flex" : "none";
 
-  // เมนู "บันทึกไปยัง Google Drive" แสดงเฉพาะ ticket ที่ "เสร็จสิ้น" แล้วเท่านั้น
-  // (ใบงานยังไม่สมบูรณ์ถ้างานยังไม่จบ ไม่ควรอัปโหลดเก็บถาวรก่อนเวลา)
-  document.getElementById("saveToDriveMenuItem").style.display =
-    ticket.status === "completed" ? "block" : "none";
-
   // การ์ดสรุปการแก้ไขปัญหา (แสดงเฉพาะเมื่อมีการกรอกสาเหตุ/วิธีแก้ไขแล้ว)
   const resolutionCard = document.getElementById("resolutionSummaryCard");
   if (ticket.resolutionCause || ticket.resolutionAction) {
@@ -692,10 +687,11 @@ function renderComments(ticket) {
  */
 /**
  * เติมข้อมูลทั้งหมดลงในใบสั่งงาน #printArea (ใช้ร่วมกันทั้งพิมพ์, ดาวน์โหลด PDF,
- * และบันทึกขึ้น Google Drive) คืนค่า true ถ้าสำเร็จ, false ถ้ายังไม่มีข้อมูล ticket
+ * และสำรองขึ้น Google Drive จากหน้าตั้งค่า) คืนค่า true ถ้าสำเร็จ, false ถ้าไม่มีข้อมูล ticket
+ * @param {object} [ticket] - ระบุ ticket ที่ต้องการ (ใช้ตอนเรียกจากหน้าอื่นที่ไม่ใช่
+ *   ticket-detail.html เช่นหน้าสำรองข้อมูล) ถ้าไม่ระบุจะใช้ ticket ของหน้าปัจจุบันแทน
  */
-async function populatePrintArea() {
-  const ticket = _currentTicketDetail;
+async function populatePrintArea(ticket = _currentTicketDetail) {
   if (!ticket) {
     Swal.fire({ icon: "warning", title: "ยังโหลดข้อมูลไม่เสร็จ", text: "กรุณารอสักครู่แล้วลองใหม่อีกครั้ง", confirmButtonColor: "#2563EB" });
     return false;
@@ -756,7 +752,10 @@ async function populatePrintArea() {
   const qrContainer = document.getElementById("printQrcode");
   try {
     const qr = qrcode(0, "M"); // typeNumber 0 = ให้เลือกขนาดที่พอดีอัตโนมัติ, M = error correction ระดับกลาง
-    qr.addData(window.location.href);
+    // สร้าง URL ของ ticket นี้ตรง ๆ (ไม่ใช้ window.location.href) เพราะฟังก์ชันนี้อาจถูก
+    // เรียกจากหน้าอื่น (เช่นหน้าสำรองข้อมูลใน Settings) ที่ไม่ใช่หน้า ticket-detail.html เอง
+    const ticketUrl = `${window.location.origin}${window.location.pathname.replace(/[^/]*$/, "")}ticket-detail.html?id=${ticket.id}`;
+    qr.addData(ticketUrl);
     qr.make();
     const qrDataUrl = qr.createDataURL(6, 2); // cellSize=6px, margin=2 modules -> ได้ภาพขนาด ~180px
     qrContainer.innerHTML = `<img src="${qrDataUrl}" alt="QR Code">`;
@@ -818,9 +817,10 @@ async function downloadTicketPdf() {
  * ใช้วิธี "ถ่ายภาพหน้าจอ" ของ DOM แทนการวาดข้อความลง PDF ตรง ๆ เพื่อเลี่ยงปัญหา
  * ฟอนต์ภาษาไทยเพี้ยนใน jsPDF (jsPDF ไม่มีฟอนต์ไทยในตัว ต้องฝังเองซึ่งไฟล์ใหญ่มาก)
  * วิธีนี้ใช้ฟอนต์ที่เบราว์เซอร์ render อยู่แล้วโดยตรง จึงถูกต้อง 100% เสมอ
+ * @param {object} [ticket] - ดูคำอธิบายพารามิเตอร์เดียวกันใน populatePrintArea
  */
-async function generateWorkOrderPdfBlob() {
-  const ready = await populatePrintArea();
+async function generateWorkOrderPdfBlob(ticket = _currentTicketDetail) {
+  const ready = await populatePrintArea(ticket);
   if (!ready) throw new Error("ไม่พร้อมสร้าง PDF");
 
   const printArea = document.getElementById("printArea");
@@ -856,26 +856,15 @@ async function generateWorkOrderPdfBlob() {
 }
 
 /**
- * บันทึกใบงาน (PDF) ขึ้น Google Drive โฟลเดอร์ที่กำหนดไว้ล่วงหน้า ผ่าน Edge Function
- * (ใช้ Google Service Account ฝั่งเซิร์ฟเวอร์ ไม่ฝัง credential ใด ๆ ใน frontend)
- * ใช้ได้เฉพาะ ticket ที่ "เสร็จสิ้น" แล้วเท่านั้น (ปุ่มจะถูกซ่อนไว้ก่อนหน้านั้น)
+ * สร้าง PDF ใบงานของ ticket ที่ระบุแล้วส่งขึ้น Google Drive ทันที (ไม่โต้ตอบกับผู้ใช้
+ * ระหว่างทาง ไม่มี Swal.fire ใด ๆ) ใช้เป็น building block ให้หน้าอื่นเรียกได้ เช่น
+ * หน้าตั้งค่า > สำรองข้อมูล ที่ต้อง backup ทีละหลาย ticket ต่อเนื่องกัน
+ * คืนค่า webViewLink ถ้าสำเร็จ, throw error ถ้าล้มเหลว (ให้ผู้เรียกจัดการแสดงผลเอง)
  */
-async function handleSaveToGoogleDrive() {
-  const ticket = _currentTicketDetail;
-  if (!ticket) return;
-
-  showLoading();
-  try {
-    const blob = await generateWorkOrderPdfBlob();
-    const base64Pdf = await blobToBase64(blob);
-    await uploadWorkOrderToGoogleDrive(ticket.ticketNo, base64Pdf);
-    hideLoading();
-    Swal.fire({ icon: "success", title: "บันทึกสำเร็จ", text: `บันทึกใบงาน ${ticket.ticketNo} ไปยัง Google Drive เรียบร้อยแล้ว`, confirmButtonColor: "#2563EB" });
-  } catch (err) {
-    hideLoading();
-    console.error(err);
-    Swal.fire({ icon: "error", title: "บันทึกไม่สำเร็จ", text: err.message || "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง", confirmButtonColor: "#EF4444" });
-  }
+async function backupTicketPdfToGoogleDrive(ticket) {
+  const blob = await generateWorkOrderPdfBlob(ticket);
+  const base64Pdf = await blobToBase64(blob);
+  return await uploadWorkOrderToGoogleDrive(ticket.ticketNo, base64Pdf);
 }
 
 /** แปลง Blob เป็น base64 string (ไม่รวม data:...;base64, prefix) สำหรับส่งให้ Edge Function */

@@ -18,8 +18,8 @@
  */
 
 /* ================= CONFIG (แก้ตรงนี้ให้ตรงกับโปรเจกต์ของคุณ) ================= */
-const SUPABASE_URL = "https://lxrzwyoagrtyzwyzfloy.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx4cnp3eW9hZ3J0eXp3eXpmbG95Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwODE4ODMsImV4cCI6MjA5OTY1Nzg4M30.EwQ8Q0Szz7jiySTgvu3QzkqVO0qyNI6Z5BgR5_xPkw8";
+const SUPABASE_URL = "https://YOUR-PROJECT-REF.supabase.co";
+const SUPABASE_ANON_KEY = "YOUR-SUPABASE-ANON-PUBLIC-KEY";
 
 // ตัว anon key นี้ "ปลอดภัยที่จะฝังในโค้ด frontend" (เช่นบน GitHub Pages)
 // เพราะสิทธิ์การเข้าถึงข้อมูลจริงถูกควบคุมด้วย Row Level Security (RLS)
@@ -206,6 +206,7 @@ async function hydrateTicket(row, usersById) {
     description: row.description,
     resolutionCause: row.resolution_cause,
     resolutionAction: row.resolution_action,
+    driveBackedUpAt: row.drive_backed_up_at,
     requester: row.requester_id,
     requesterName: requester ? requester.fullName : "ไม่ทราบชื่อ",
     assignee: row.assignee_id,
@@ -426,6 +427,24 @@ async function uploadWorkOrderToGoogleDrive(ticketNo, base64Pdf) {
   const result = await response.json();
   if (!result.success) throw new Error(result.message || "บันทึกขึ้น Google Drive ไม่สำเร็จ");
   return result.webViewLink;
+}
+
+/**
+ * ดึงรายการ ticket ที่ "เสร็จสิ้น" แล้ว แต่ยังไม่เคยสำรองขึ้น Google Drive
+ * (drive_backed_up_at ยังเป็น NULL อยู่) ใช้ในหน้าตั้งค่า > สำรองข้อมูล
+ */
+function getTicketsPendingBackup() {
+  return _cache.tickets.filter(t => t.status === "completed" && !t.driveBackedUpAt);
+}
+
+/** ทำเครื่องหมายว่า ticket นี้สำรองขึ้น Google Drive แล้ว (บันทึกเวลาปัจจุบัน) */
+async function markTicketBackedUp(ticketId) {
+  const { error } = await supabaseClient
+    .from("tickets")
+    .update({ drive_backed_up_at: new Date().toISOString() })
+    .eq("id", ticketId);
+  if (error) throw error;
+  await loadAppData();
 }
 
 /* ================= MUTATIONS (เขียนข้อมูลขึ้น Supabase แล้วอัปเดต cache) ================= */

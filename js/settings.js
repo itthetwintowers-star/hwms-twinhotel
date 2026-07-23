@@ -22,6 +22,7 @@ document.addEventListener("DOMContentLoaded", async function () {
   renderUsersTable(db);
   renderRoleCards();
   await renderPendingUsersTable(db);
+  renderBackupTable();
 
   // เปิดแท็บผู้ใช้งานทันทีถ้ามาจาก #users ใน URL
   if (window.location.hash === "#users") {
@@ -757,4 +758,119 @@ async function renderPendingUsersTable(db) {
       }
     });
   });
+}
+
+/* ================= GOOGLE DRIVE BACKUP ================= */
+
+/**
+ * วาดตารางรายการ ticket ที่ "เสร็จสิ้น" แล้วแต่ยังไม่เคยสำรองขึ้น Google Drive
+ * พร้อมอัปเดต badge จำนวนที่แถบเมนูซ้าย (รูปแบบเดียวกับ badge "รออนุมัติ")
+ */
+function renderBackupTable() {
+  const pending = getTicketsPendingBackup();
+  const badge = document.getElementById("backupCountBadge");
+  const tbody = document.getElementById("backupTableBody");
+
+  if (pending.length === 0) {
+    badge.style.display = "none";
+    tbody.innerHTML = `<tr><td colspan="5" class="hwms-empty-state"><i class="fa-regular fa-circle-check"></i><div>ไม่มีงานที่รอสำรองข้อมูล</div></td></tr>`;
+    return;
+  }
+
+  badge.style.display = "inline-flex";
+  badge.textContent = pending.length;
+
+  // เรียงจากเก่าสุดไปใหม่สุด (งานที่ค้างนานที่สุดควรสำรองก่อน)
+  const sorted = [...pending].sort((a, b) => new Date(a.createdDate) - new Date(b.createdDate));
+
+  tbody.innerHTML = sorted.map(t => `
+    <tr data-ticket-id="${t.id}">
+      <td><strong>${t.ticketNo}</strong></td>
+      <td>${t.subject}</td>
+      <td>${formatThaiDateTime(t.createdDate)}</td>
+      <td><span class="hwms-badge hwms-badge-warning backup-status-badge">รอสำรอง</span></td>
+      <td>
+        <button class="btn btn-hwms-outline btn-sm backup-one-btn" style="padding:6px 12px;">
+          <i class="fa-brands fa-google-drive"></i> สำรองรายการนี้
+        </button>
+      </td>
+    </tr>
+  `).join("");
+
+  tbody.querySelectorAll(".backup-one-btn").forEach(btn => {
+    btn.addEventListener("click", async function () {
+      const row = this.closest("tr");
+      const ticketId = row.dataset.ticketId;
+      const ticket = getTicketById(ticketId);
+      await backupSingleTicketRow(row, ticket);
+    });
+  });
+
+  document.getElementById("backupAllBtn").onclick = () => handleBackupAll(sorted);
+}
+
+/** สำรอง ticket แถวเดียว พร้อมอัปเดตสถานะในตารางแบบ real-time (ใช้ทั้งปุ่มเดี่ยวและปุ่ม "ทั้งหมด") */
+async function backupSingleTicketRow(row, ticket) {
+  const statusBadge = row.querySelector(".backup-status-badge");
+  const button = row.querySelector(".backup-one-btn");
+
+  statusBadge.className = "hwms-badge hwms-badge-primary backup-status-badge";
+  statusBadge.textContent = "กำลังสำรอง...";
+  if (button) button.disabled = true;
+
+  try {
+    await backupTicketPdfToGoogleDrive(ticket);
+    await markTicketBackedUp(ticket.id);
+    statusBadge.className = "hwms-badge hwms-badge-success backup-status-badge";
+    statusBadge.textContent = "สำรองสำเร็จ";
+    if (button) button.style.display = "none";
+    return true;
+  } catch (err) {
+    console.error(err);
+    statusBadge.className = "hwms-badge hwms-badge-danger backup-status-badge";
+    statusBadge.textContent = "ล้มเหลว";
+    if (button) button.disabled = false;
+    return false;
+  }
+}
+
+/** สำรองข้อมูลทั้งหมดที่ค้างอยู่ ทีละรายการต่อเนื่องกัน (ไม่ยิงพร้อมกันเพื่อไม่ให้ browser/Apps Script โอเวอร์โหลด) */
+async function handleBackupAll(pendingTickets) {
+  const backupAllBtn = document.getElementById("backupAllBtn");
+  const progressWrap = document.getElementById("backupProgressWrap");
+  const progressBar = document.getElementById("backupProgressBar");
+  const progressText = document.getElementById("backupProgressText");
+
+  backupAllBtn.disabled = true;
+  progressWrap.style.display = "block";
+
+  let successCount = 0;
+  let failCount = 0;
+
+  for (let i = 0; i < pendingTickets.length; i++) {
+    const ticket = pendingTickets[i];
+    const row = document.querySelector(`#backupTableBody tr[data-ticket-id="${ticket.id}"]`);
+    const percent = Math.round(((i + 1) / pendingTickets.length) * 100);
+
+    progressText.textContent = `กำลังสำรอง ${i + 1} / ${pendingTickets.length}: ${ticket.ticketNo}`;
+    progressBar.style.width = percent + "%";
+
+    if (row) {
+      const ok = await backupSingleTicketRow(row, ticket);
+      if (ok) successCount++; else failCount++;
+    }
+  }
+
+  backupAllBtn.disabled = false;
+  progressWrap.style.display = "none";
+
+  Swal.fire({
+    icon: failCount === 0 ? "success" : "warning",
+    title: "สำรองข้อมูลเสร็จสิ้น",
+    text: `สำเร็จ ${successCount} รายการ` + (failCount > 0 ? `, ล้มเหลว ${failCount} รายการ (ลองกดสำรองรายการนั้นซ้ำได้)` : ""),
+    confirmButtonColor: "#2563EB"
+  });
+
+  // อัปเดต badge จำนวนคงเหลือใหม่ (cache ถูกรีเฟรชแล้วจาก markTicketBackedUp ระหว่างทาง)
+  renderBackupTable();
 }

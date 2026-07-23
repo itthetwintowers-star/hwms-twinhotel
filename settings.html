@@ -49,6 +49,10 @@
               </div>
               <div class="list-group-item" data-tab="tab-role"><i class="fa-solid fa-user-shield"></i> สิทธิ์การใช้งาน (Role)</div>
               <div class="list-group-item" data-tab="tab-company"><i class="fa-solid fa-hotel"></i> ข้อมูลบริษัท</div>
+              <div class="list-group-item" data-tab="tab-backup">
+                <i class="fa-brands fa-google-drive"></i> สำรองข้อมูล
+                <span id="backupCountBadge" class="hwms-badge hwms-badge-warning ms-auto" style="display:none;"></span>
+              </div>
             </div>
           </div>
         </div>
@@ -195,17 +199,110 @@
             </div>
           </div>
 
+          <!-- Backup -->
+          <div class="hwms-settings-tab" id="tab-backup">
+            <div class="hwms-card">
+              <div class="hwms-card-body d-flex justify-content-between align-items-start flex-wrap gap-2 pb-0">
+                <div>
+                  <h2 style="font-size:15px;">สำรองใบงานขึ้น Google Drive</h2>
+                  <p style="font-size:12px; color:var(--hwms-text-muted); max-width:520px;">
+                    รายการงานที่ "เสร็จสิ้น" แล้วแต่ยังไม่เคยสำรองเป็น PDF ขึ้น Google Drive
+                    กดปุ่ม "สำรองข้อมูลทั้งหมด" เพื่อสร้าง PDF และอัปโหลดทีละรายการอัตโนมัติ
+                  </p>
+                </div>
+                <button class="btn btn-hwms-primary btn-sm" id="backupAllBtn"><i class="fa-brands fa-google-drive me-1"></i>สำรองข้อมูลทั้งหมด</button>
+              </div>
+              <div id="backupProgressWrap" class="px-3 pb-2" style="display:none;">
+                <div class="progress" style="height:8px;">
+                  <div class="progress-bar bg-primary" id="backupProgressBar" style="width:0%;"></div>
+                </div>
+                <div style="font-size:12px; color:var(--hwms-text-muted);" class="mt-1" id="backupProgressText"></div>
+              </div>
+              <div class="hwms-scroll-x">
+                <table class="table hwms-table mb-0">
+                  <thead><tr><th>Ticket No</th><th>เรื่อง</th><th>วันที่เสร็จสิ้น</th><th>สถานะสำรอง</th><th>จัดการ</th></tr></thead>
+                  <tbody id="backupTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
     </main>
   </div>
 </div>
 
+<!-- ใบงานสำหรับสร้าง PDF ตอนสำรองข้อมูล (ใช้ template เดียวกับหน้า ticket-detail.html
+     ซ่อนไว้เสมอในหน้านี้ ไม่เคยแสดงให้ผู้ใช้เห็นตรง ๆ หรือสั่งพิมพ์จากหน้านี้) -->
+<div id="printArea">
+  <div class="print-header">
+    <div>
+      <div class="print-hotel-name" id="printHotelName">Hotel Work Management System</div>
+      <div class="print-doc-title">ใบสั่งงาน (Work Order)</div>
+    </div>
+    <div id="printQrcode"></div>
+  </div>
+
+  <table class="print-info-table">
+    <tr><td>เลขที่ Ticket</td><td id="printTicketNo"></td></tr>
+    <tr><td>เรื่อง</td><td id="printSubject"></td></tr>
+    <tr><td>แผนก</td><td id="printDepartment"></td></tr>
+    <tr><td>ประเภทงาน</td><td id="printCategory"></td></tr>
+    <tr><td>สถานที่</td><td id="printLocation"></td></tr>
+    <tr><td>ความสำคัญ</td><td id="printPriority"></td></tr>
+    <tr><td>สถานะ</td><td id="printStatus"></td></tr>
+    <tr><td>ผู้แจ้ง</td><td id="printRequester"></td></tr>
+    <tr><td>ผู้รับผิดชอบ</td><td id="printAssignee"></td></tr>
+    <tr><td>วันที่แจ้ง</td><td id="printCreated"></td></tr>
+    <tr><td>กำหนดเสร็จ (SLA)</td><td id="printDue"></td></tr>
+  </table>
+
+  <div class="print-section-title">รายละเอียดงาน</div>
+  <p id="printDescription" class="print-description"></p>
+
+  <div id="printBeforePhotosSection" style="display:none;">
+    <div class="print-section-title">รูปภาพตอนแจ้งงาน</div>
+    <div class="print-photos-row" id="printBeforePhotos"></div>
+  </div>
+
+  <div id="printResolutionSection" style="display:none;">
+    <div class="print-section-title">สาเหตุของปัญหา</div>
+    <p id="printResolutionCause" class="print-description"></p>
+    <div class="print-section-title">วิธีการแก้ไขปัญหา</div>
+    <p id="printResolutionAction" class="print-description"></p>
+  </div>
+
+  <div id="printAfterPhotosSection" style="display:none;">
+    <div class="print-section-title">รูปภาพหลังดำเนินการแก้ไข</div>
+    <div class="print-photos-row" id="printAfterPhotos"></div>
+  </div>
+
+  <div class="print-signature-row">
+    <div class="print-signature-box">
+      <div class="print-signature-line"></div>
+      <div>ผู้แจ้งงาน</div>
+    </div>
+    <div class="print-signature-box">
+      <div class="print-signature-line"></div>
+      <div>ผู้รับผิดชอบงาน</div>
+    </div>
+    <div class="print-signature-box">
+      <div class="print-signature-line"></div>
+      <div>ผู้ตรวจสอบ</div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="js/supabase-client.js"></script>
 <script src="js/app.js"></script>
+<script src="js/ticket.js"></script>
 <script src="js/settings.js"></script>
 </body>
 </html>
