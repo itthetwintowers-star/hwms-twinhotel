@@ -18,8 +18,8 @@
  */
 
 /* ================= CONFIG (แก้ตรงนี้ให้ตรงกับโปรเจกต์ของคุณ) ================= */
-const SUPABASE_URL = "https://YOUR-PROJECT-REF.supabase.co";
-const SUPABASE_ANON_KEY = "YOUR-SUPABASE-ANON-PUBLIC-KEY";
+const SUPABASE_URL = "https://lxrzwyoagrtyzwyzfloy.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx4cnp3eW9hZ3J0eXp3eXpmbG95Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwODE4ODMsImV4cCI6MjA5OTY1Nzg4M30.EwQ8Q0Szz7jiySTgvu3QzkqVO0qyNI6Z5BgR5_xPkw8";
 
 // ตัว anon key นี้ "ปลอดภัยที่จะฝังในโค้ด frontend" (เช่นบน GitHub Pages)
 // เพราะสิทธิ์การเข้าถึงข้อมูลจริงถูกควบคุมด้วย Row Level Security (RLS)
