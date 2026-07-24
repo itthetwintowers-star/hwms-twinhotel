@@ -18,8 +18,8 @@
  */
 
 /* ================= CONFIG (แก้ตรงนี้ให้ตรงกับโปรเจกต์ของคุณ) ================= */
-const SUPABASE_URL = "https://lxrzwyoagrtyzwyzfloy.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx4cnp3eW9hZ3J0eXp3eXpmbG95Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwODE4ODMsImV4cCI6MjA5OTY1Nzg4M30.EwQ8Q0Szz7jiySTgvu3QzkqVO0qyNI6Z5BgR5_xPkw8";
+const SUPABASE_URL = "https://YOUR-PROJECT-REF.supabase.co";
+const SUPABASE_ANON_KEY = "YOUR-SUPABASE-ANON-PUBLIC-KEY";
 
 // ตัว anon key นี้ "ปลอดภัยที่จะฝังในโค้ด frontend" (เช่นบน GitHub Pages)
 // เพราะสิทธิ์การเข้าถึงข้อมูลจริงถูกควบคุมด้วย Row Level Security (RLS)
@@ -478,11 +478,12 @@ async function addTicket(ticketInput, user, files = []) {
   });
   if (insertError) throw insertError;
 
-  await supabaseClient.from("ticket_timeline").insert({
+  const { error: timelineInsertError } = await supabaseClient.from("ticket_timeline").insert({
     ticket_id: ticketId,
     action: "สร้างงานแจ้งซ่อม",
     by_user_id: user.id
   });
+  if (timelineInsertError) console.error("บันทึก timeline ไม่สำเร็จ:", timelineInsertError);
 
   await uploadTicketAttachments(ticketId, files, "before");
 
@@ -532,12 +533,19 @@ async function updateTicketStatus(id, newStatusId, byUser, resolution = null) {
     updates.resolution_action = resolution.action;
   }
 
-  await supabaseClient.from("tickets").update(updates).eq("id", id);
-  await supabaseClient.from("ticket_timeline").insert({
+  // สำคัญ: supabase-js ไม่ throw error ให้อัตโนมัติเมื่อถูก RLS/trigger ปฏิเสธ
+  // (เช่น trigger enforce_ticket_update_rules บล็อกเพราะไม่มีสิทธิ์) ต้องเช็ค
+  // error เองแล้ว throw ต่อเสมอ ไม่งั้นโค้ดจะเข้าใจผิดว่าสำเร็จและบันทึก timeline
+  // เท็จทั้งที่สถานะจริงไม่ได้เปลี่ยนเลย
+  const { error: updateError } = await supabaseClient.from("tickets").update(updates).eq("id", id);
+  if (updateError) throw new Error(updateError.message || "ไม่มีสิทธิ์เปลี่ยนสถานะงานนี้");
+
+  const { error: timelineError } = await supabaseClient.from("ticket_timeline").insert({
     ticket_id: id,
     action: `เปลี่ยนสถานะเป็น "${getStatusInfo(newStatusId).labelTh}"`,
     by_user_id: byUser.id
   });
+  if (timelineError) console.error("บันทึก timeline ไม่สำเร็จ:", timelineError);
 
   if (resolution && resolution.photos && resolution.photos.length > 0) {
     await uploadTicketAttachments(id, resolution.photos, "after");
@@ -549,25 +557,30 @@ async function updateTicketStatus(id, newStatusId, byUser, resolution = null) {
 
 /** มอบหมาย/ยกเลิกมอบหมายผู้รับผิดชอบงาน */
 async function updateTicketAssignee(id, assigneeId, byUser) {
-  await supabaseClient.from("tickets").update({ assignee_id: assigneeId || null }).eq("id", id);
+  const { error: updateError } = await supabaseClient.from("tickets").update({ assignee_id: assigneeId || null }).eq("id", id);
+  if (updateError) throw new Error(updateError.message || "ไม่มีสิทธิ์มอบหมายงานนี้");
 
   let actionText = "ยกเลิกการมอบหมายงาน";
   if (assigneeId) {
     const tech = _cache.users.find(u => u.id === assigneeId);
     actionText = `มอบหมายงานให้ ${tech ? tech.fullName : assigneeId}`;
   }
-  await supabaseClient.from("ticket_timeline").insert({
+  const { error: timelineError } = await supabaseClient.from("ticket_timeline").insert({
     ticket_id: id, action: actionText, by_user_id: byUser.id
   });
+  if (timelineError) console.error("บันทึก timeline ไม่สำเร็จ:", timelineError);
+
   await loadAppData();
   return getTicketById(id);
 }
 
 /** เพิ่มความคิดเห็นใน ticket */
 async function addTicketComment(id, text, byUser) {
-  await supabaseClient.from("ticket_comments").insert({
+  const { error } = await supabaseClient.from("ticket_comments").insert({
     ticket_id: id, by_user_id: byUser.id, comment_text: text
   });
+  if (error) throw new Error(error.message || "ไม่สามารถเพิ่มความคิดเห็นได้");
+
   await loadAppData();
   return getTicketById(id);
 }

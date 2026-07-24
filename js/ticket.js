@@ -44,6 +44,30 @@ const STATUS_TRANSITIONS = {
 // ยกเลิกงานได้เฉพาะก่อนเริ่มดำเนินการเท่านั้น (งานใหม่ / รับงานแล้ว)
 const CANCEL_ALLOWED_STATUSES = ["new", "accepted"];
 
+/**
+ * ตรวจสอบสิทธิ์ฝั่ง client เพื่อซ่อน/แสดงปุ่มให้ตรงกับสิ่งที่ทำได้จริง (UX เท่านั้น)
+ * การบังคับใช้จริงอยู่ที่ trigger "enforce_ticket_update_rules" ในฐานข้อมูลเสมอ
+ * ต่อให้ซ่อนปุ่มผิดพลาดหรือมีคนแก้โค้ด JS เอง ก็ยังถูกฐานข้อมูลปฏิเสธอยู่ดี
+ */
+
+/** Admin/Manager หรือช่างที่ถูกมอบหมายงานนี้ เปลี่ยนสถานะได้ */
+function canManageTicketStatus(ticket, currentUser) {
+  if (currentUser.role === "Admin" || currentUser.role === "Manager") return true;
+  return ticket.assignee === currentUser.id;
+}
+
+/** เฉพาะ Admin/Manager เท่านั้นที่มอบหมาย/เปลี่ยนผู้รับผิดชอบงานได้ */
+function canAssignTicket(currentUser) {
+  return currentUser.role === "Admin" || currentUser.role === "Manager";
+}
+
+/** Admin/Manager ยกเลิกได้เสมอ (ตามสถานะที่อนุญาต), ผู้แจ้งงานยกเลิกงานตัวเองได้เช่นกัน */
+function canCancelTicket(ticket, currentUser) {
+  if (!CANCEL_ALLOWED_STATUSES.includes(ticket.status)) return false;
+  if (currentUser.role === "Admin" || currentUser.role === "Manager") return true;
+  return ticket.requester === currentUser.id;
+}
+
 document.addEventListener("DOMContentLoaded", async function () {
   if (document.getElementById("newTicketForm")) {
     await initNewTicketPage();
@@ -241,9 +265,14 @@ function renderTicketDetail(ticket, currentUser) {
   // Comments
   renderComments(ticket);
 
-  // ปุ่ม "ยกเลิกงาน" แสดงเฉพาะตอนสถานะยังเป็นงานใหม่/รับงานแล้วเท่านั้น
+  // ปุ่ม "ยกเลิกงาน" / "มอบหมายงาน" / "เปลี่ยนสถานะ" แสดงเฉพาะผู้ที่มีสิทธิ์จริงเท่านั้น
+  // (การบังคับใช้จริงยังอยู่ที่ trigger ในฐานข้อมูลเสมอ นี่แค่ซ่อนปุ่มให้ตรงกับที่ทำได้จริง)
   document.getElementById("cancelTicketBtn").style.display =
-    CANCEL_ALLOWED_STATUSES.includes(ticket.status) ? "inline-flex" : "none";
+    canCancelTicket(ticket, currentUser) ? "inline-flex" : "none";
+  document.getElementById("assignTechnicianBtn").style.display =
+    canAssignTicket(currentUser) ? "inline-flex" : "none";
+  document.getElementById("changeStatusBtn").style.display =
+    canManageTicketStatus(ticket, currentUser) ? "inline-flex" : "none";
 
   // การ์ดสรุปการแก้ไขปัญหา (แสดงเฉพาะเมื่อมีการกรอกสาเหตุ/วิธีแก้ไขแล้ว)
   const resolutionCard = document.getElementById("resolutionSummaryCard");
@@ -282,7 +311,7 @@ function renderTicketDetail(ticket, currentUser) {
     } catch (err) {
       hideLoading();
       console.error(err);
-      showToast("มอบหมายงานไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "error");
+      showToast(err.message || "มอบหมายงานไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "error");
     }
   };
 
@@ -410,7 +439,7 @@ async function performStatusChange(ticketId, newStatus, currentUser, resolution 
   } catch (err) {
     hideLoading();
     console.error(err);
-    showToast("อัปเดตสถานะไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "error");
+    showToast(err.message || "อัปเดตสถานะไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "error");
   }
 }
 
