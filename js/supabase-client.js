@@ -279,7 +279,7 @@ function generateTicketNo() {
 
 /**
  * เข้าสู่ระบบด้วย "ชื่อผู้ใช้งาน" (username) แทนอีเมล
- * ภายในจะแปลง username เป็นอีเมลรูปแบบ <username>@hwms.local ก่อนส่งให้ Supabase Auth
+ * ภายในจะแปลง username เป็นอีเมลรูปแบบ <username>@hwms-users.app ก่อนส่งให้ Supabase Auth
  * (ผู้ใช้ทุกคนต้องถูกสร้างด้วยอีเมลรูปแบบนี้ตอน setup ครั้งแรก ดู supabase/seed-admin.sql)
  *
  * คืนค่าเป็น { status, user? }
@@ -288,7 +288,7 @@ function generateTicketNo() {
  *           "invalid" -> username หรือ password ไม่ถูกต้อง
  */
 async function findUserByCredentials(username, password) {
-  const email = username.includes("@") ? username : `${username}@hwms.local`;
+  const email = username.includes("@") ? username : `${username}@hwms-users.app`;
 
   const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
   if (error || !data.user) return { status: "invalid" };
@@ -317,7 +317,7 @@ async function signOutSupabase() {
  * รอ Admin เข้ามาอนุมัติ (เปลี่ยน active=true และปรับ role/แผนกได้ตอนอนุมัติ) ก่อนจึง login ใช้งานจริงได้
  */
 async function registerNewUser({ fullName, username, password, departmentId }) {
-  const email = `${username}@hwms.local`;
+  const email = `${username}@hwms-users.app`;
 
   const { data, error } = await supabaseClient.auth.signUp({ email, password });
   if (error) throw error;
