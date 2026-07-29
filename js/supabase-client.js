@@ -279,16 +279,31 @@ function generateTicketNo() {
 
 /**
  * เข้าสู่ระบบด้วย "ชื่อผู้ใช้งาน" (username) แทนอีเมล
- * ภายในจะแปลง username เป็นอีเมลรูปแบบ <username>@hwms-users.app ก่อนส่งให้ Supabase Auth
- * (ผู้ใช้ทุกคนต้องถูกสร้างด้วยอีเมลรูปแบบนี้ตอน setup ครั้งแรก ดู supabase/seed-admin.sql)
+ * ภายในจะค้นหาอีเมลจริงที่ผูกกับ username นี้ผ่านฟังก์ชัน get_email_by_username()
+ * ก่อน (Supabase Auth ต้องการอีเมลเสมอ ไม่รองรับ login ด้วย username ตรง ๆ) แล้ว
+ * ค่อยส่งอีเมลที่ได้ไปให้ Supabase Auth ตรวจสอบรหัสผ่านตามปกติ
+ *
+ * หมายเหตุ: ผู้ใช้ที่สร้างผ่าน Supabase Dashboard โดยตรง (เช่น Admin คนแรก) อาจใช้
+ * อีเมลปลอมรูปแบบ <username>@hwms-users.app ได้ตามปกติ (Dashboard ไม่ตรวจสอบ
+ * ความมีอยู่จริงของโดเมน) แต่ผู้ใช้ที่สมัครเองผ่านหน้าเว็บ (register.html) ต้องใช้
+ * อีเมลจริงเสมอ เพราะ Supabase ตรวจสอบโดเมนอีเมลตอนเรียก auth.signUp() จริง
  *
  * คืนค่าเป็น { status, user? }
  *   status: "ok"      -> เข้าสู่ระบบสำเร็จ, มี user แนบมาด้วย
  *           "pending" -> username/password ถูกต้อง แต่ยังไม่ได้รับอนุมัติจาก Admin
  *           "invalid" -> username หรือ password ไม่ถูกต้อง
  */
-async function findUserByCredentials(username, password) {
-  const email = username.includes("@") ? username : `${username}@hwms-users.app`;
+async function findUserByCredentials(usernameOrEmail, password) {
+  let email = usernameOrEmail;
+
+  if (!usernameOrEmail.includes("@")) {
+    const { data: resolvedEmail, error: lookupError } = await supabaseClient.rpc(
+      "get_email_by_username",
+      { input_username: usernameOrEmail }
+    );
+    if (lookupError || !resolvedEmail) return { status: "invalid" };
+    email = resolvedEmail;
+  }
 
   const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
   if (error || !data.user) return { status: "invalid" };
@@ -315,10 +330,13 @@ async function signOutSupabase() {
  * สมัครสมาชิกใหม่ด้วยตัวเอง (role ถูกบังคับเป็น "Staff" และ active=false เสมอ
  * โดย RLS policy ในฐานข้อมูล ต่อให้ส่งค่าอื่นมาจาก client ก็ถูกปฏิเสธ)
  * รอ Admin เข้ามาอนุมัติ (เปลี่ยน active=true และปรับ role/แผนกได้ตอนอนุมัติ) ก่อนจึง login ใช้งานจริงได้
+ *
+ * หมายเหตุ: ต้องใช้ "อีเมลจริง" ของผู้สมัคร (ไม่ใช่อีเมลปลอมแบบเดิม) เพราะ Supabase
+ * ตรวจสอบว่าโดเมนอีเมลมีอยู่จริง (deliverability check) ตอนเรียก auth.signUp() —
+ * อีเมลปลอมทุกรูปแบบจะถูกปฏิเสธเสมอไม่ว่าจะใช้โดเมนอะไร ผู้ใช้ยังคง login ด้วย
+ * "username" ได้ตามปกติ (ระบบค้นหาอีเมลจริงที่ผูกไว้ให้อัตโนมัติ ดู findUserByCredentials)
  */
-async function registerNewUser({ fullName, username, password, departmentId }) {
-  const email = `${username}@hwms-users.app`;
-
+async function registerNewUser({ fullName, username, email, password, departmentId }) {
   const { data, error } = await supabaseClient.auth.signUp({ email, password });
   if (error) throw error;
   if (!data.user) throw new Error("ไม่สามารถสมัครสมาชิกได้ กรุณาลองใหม่อีกครั้ง");

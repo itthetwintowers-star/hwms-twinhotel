@@ -34,9 +34,15 @@
       </div>
 
       <div class="mb-3">
-        <label class="hwms-label" for="username">ชื่อผู้ใช้งาน</label>
+        <label class="hwms-label" for="username">ชื่อผู้ใช้งาน (สำหรับ login)</label>
         <input type="text" class="form-control hwms-input" id="username" placeholder="ใช้ตัวอักษร a-z, ตัวเลข, . _ - เท่านั้น" required>
         <div class="form-text" style="font-size:11px;">ห้ามเว้นวรรคหรือใช้ตัวอักษรพิเศษอื่น (3-50 ตัวอักษร)</div>
+      </div>
+
+      <div class="mb-3">
+        <label class="hwms-label" for="email">อีเมล</label>
+        <input type="email" class="form-control hwms-input" id="email" placeholder="เช่น somchai@gmail.com" required>
+        <div class="form-text" style="font-size:11px;">ใช้สำหรับยืนยันตัวตนในระบบเท่านั้น ไม่มีการส่งอีเมลใด ๆ ไปหาคุณ</div>
       </div>
 
       <div class="mb-3">
@@ -98,18 +104,23 @@
 
     const fullName = document.getElementById("fullName").value.trim();
     const username = document.getElementById("username").value.trim();
+    const email = document.getElementById("email").value.trim();
     const departmentId = document.getElementById("department").value;
     const password = document.getElementById("password").value;
     const confirmPassword = document.getElementById("confirmPassword").value;
     const btn = document.getElementById("registerBtn");
     const btnText = document.getElementById("registerBtnText");
 
-    if (!fullName || !username || !departmentId || !password || !confirmPassword) {
+    if (!fullName || !username || !email || !departmentId || !password || !confirmPassword) {
       Swal.fire({ icon: "warning", title: "กรอกข้อมูลไม่ครบ", text: "กรุณากรอกข้อมูลให้ครบทุกช่อง", confirmButtonColor: "#2563EB" });
       return;
     }
     if (!/^[a-zA-Z0-9._-]{3,50}$/.test(username)) {
       Swal.fire({ icon: "warning", title: "ชื่อผู้ใช้งานไม่ถูกต้อง", text: "ใช้ได้เฉพาะ a-z, 0-9, . _ - เท่านั้น (3-50 ตัวอักษร)", confirmButtonColor: "#2563EB" });
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      Swal.fire({ icon: "warning", title: "อีเมลไม่ถูกต้อง", text: "กรุณากรอกอีเมลที่ใช้งานได้จริง (ต้องเป็นโดเมนอีเมลจริง เช่น gmail.com, hotmail.com)", confirmButtonColor: "#2563EB" });
       return;
     }
     if (password.length < 6) {
@@ -125,7 +136,7 @@
     btnText.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>กำลังสมัครสมาชิก...';
 
     try {
-      await registerNewUser({ fullName, username, password, departmentId });
+      await registerNewUser({ fullName, username, email, password, departmentId });
       Swal.fire({
         icon: "success",
         title: "สมัครสมาชิกสำเร็จ",
@@ -141,10 +152,14 @@
       btnText.textContent = "สมัครสมาชิก";
 
       let message = "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง";
-      if (err.message && err.message.includes("duplicate")) {
+      if (err.message && err.message.includes("duplicate") && err.message.includes("username")) {
         message = "ชื่อผู้ใช้งานนี้มีอยู่ในระบบแล้ว กรุณาเลือกชื่ออื่น";
+      } else if (err.message && err.message.includes("duplicate")) {
+        message = "อีเมลหรือชื่อผู้ใช้งานนี้มีอยู่ในระบบแล้ว";
       } else if (err.message && err.message.toLowerCase().includes("already registered")) {
-        message = "ชื่อผู้ใช้งานนี้มีอยู่ในระบบแล้ว กรุณาเลือกชื่ออื่น";
+        message = "อีเมลนี้เคยสมัครสมาชิกไว้แล้ว กรุณาใช้อีเมลอื่น หรือเข้าสู่ระบบแทน";
+      } else if (err.message && err.message.toLowerCase().includes("invalid")) {
+        message = "อีเมลที่กรอกไม่ถูกต้อง กรุณาตรวจสอบและลองใหม่อีกครั้ง";
       }
       Swal.fire({ icon: "error", title: "สมัครสมาชิกไม่สำเร็จ", text: message, confirmButtonColor: "#EF4444" });
     }
