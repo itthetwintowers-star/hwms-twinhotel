@@ -326,78 +326,11 @@ async function signOutSupabase() {
   await supabaseClient.auth.signOut();
 }
 
-/**
- * สมัครสมาชิกใหม่ด้วยตัวเอง (role ถูกบังคับเป็น "Staff" และ active=false เสมอ
- * โดย RLS policy ในฐานข้อมูล ต่อให้ส่งค่าอื่นมาจาก client ก็ถูกปฏิเสธ)
- * รอ Admin เข้ามาอนุมัติ (เปลี่ยน active=true และปรับ role/แผนกได้ตอนอนุมัติ) ก่อนจึง login ใช้งานจริงได้
- *
- * หมายเหตุ: ต้องใช้ "อีเมลจริง" ของผู้สมัคร (ไม่ใช่อีเมลปลอมแบบเดิม) เพราะ Supabase
- * ตรวจสอบว่าโดเมนอีเมลมีอยู่จริง (deliverability check) ตอนเรียก auth.signUp() —
- * อีเมลปลอมทุกรูปแบบจะถูกปฏิเสธเสมอไม่ว่าจะใช้โดเมนอะไร ผู้ใช้ยังคง login ด้วย
- * "username" ได้ตามปกติ (ระบบค้นหาอีเมลจริงที่ผูกไว้ให้อัตโนมัติ ดู findUserByCredentials)
- */
-async function registerNewUser({ fullName, username, email, password, departmentId }) {
-  const { data, error } = await supabaseClient.auth.signUp({ email, password });
-  if (error) throw error;
-  if (!data.user) throw new Error("ไม่สามารถสมัครสมาชิกได้ กรุณาลองใหม่อีกครั้ง");
-
-  const colors = ["#2563EB", "#22C55E", "#F59E0B", "#EF4444", "#8B5CF6", "#06B6D4"];
-  const avatarColor = colors[Math.floor(Math.random() * colors.length)];
-
-  const { error: profileError } = await supabaseClient.from("profiles").insert({
-    id: data.user.id,
-    full_name: fullName,
-    username,
-    email,
-    role: "Staff",
-    department_id: departmentId,
-    avatar_color: avatarColor,
-    active: false
-  });
-
-  // ออกจาก session ทันทีหลังสมัคร เพราะยังไม่ได้รับอนุมัติ ต้องรอ Admin ก่อน
-  await supabaseClient.auth.signOut();
-
-  if (profileError) throw profileError;
-  return true;
-}
-
 /** เปลี่ยนรหัสผ่านของตัวเอง (ต้อง login อยู่แล้ว ใช้ตอนจำรหัสผ่านเดิมไม่ได้แต่ยัง login ค้างอยู่ไม่ได้/ลืมทีหลัง) */
 async function changeOwnPassword(newPassword) {
   const { error } = await supabaseClient.auth.updateUser({ password: newPassword });
   if (error) throw error;
   return true;
-}
-
-/** ดึงรายชื่อผู้ใช้ที่สมัครสมาชิกแล้วรอ Admin อนุมัติ (active = false) */
-async function getPendingUsers() {
-  const { data, error } = await supabaseClient
-    .from("profiles")
-    .select("*")
-    .eq("active", false)
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return (data || []).map(mapProfileRow);
-}
-
-/** Admin อนุมัติผู้ใช้ พร้อมกำหนด role และแผนกที่แท้จริงตอนอนุมัติ */
-async function approveUser(userId, role, departmentId) {
-  const { error } = await supabaseClient
-    .from("profiles")
-    .update({ active: true, role, department_id: departmentId })
-    .eq("id", userId);
-  if (error) throw error;
-  await loadAppData();
-}
-
-/**
- * Admin ปฏิเสธคำขอสมัครสมาชิก (ลบ profile ทิ้ง)
- * หมายเหตุ: บัญชี Supabase Auth เบื้องหลัง (auth.users) จะยังค้างอยู่ ต้องเข้าไปลบเองใน
- * Supabase Dashboard > Authentication > Users เป็นครั้งคราว (ข้อจำกัดของ client SDK)
- */
-async function rejectUser(userId) {
-  const { error } = await supabaseClient.from("profiles").delete().eq("id", userId);
-  if (error) throw error;
 }
 
 /**

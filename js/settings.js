@@ -21,7 +21,6 @@ document.addEventListener("DOMContentLoaded", async function () {
   renderStatusTable(db);
   renderUsersTable(db);
   renderRoleCards();
-  await renderPendingUsersTable(db);
   renderBackupTable();
 
   // เปิดแท็บผู้ใช้งานทันทีถ้ามาจาก #users ใน URL
@@ -660,111 +659,11 @@ function renderRoleCards() {
   `).join("");
 }
 
-/** ดึงรายชื่อผู้สมัครที่รออนุมัติ แล้ววาดตารางพร้อม dropdown เลือก Role/แผนกจริงตอนอนุมัติ */
-async function renderPendingUsersTable(db) {
-  const badge = document.getElementById("pendingCountBadge");
-  const tbody = document.getElementById("pendingUsersTableBody");
-
-  let pendingUsers = [];
-  try {
-    pendingUsers = await getPendingUsers();
-  } catch (err) {
-    console.error(err);
-    tbody.innerHTML = `<tr><td colspan="6" class="hwms-empty-state">ไม่สามารถโหลดข้อมูลได้</td></tr>`;
-    return;
-  }
-
-  if (pendingUsers.length === 0) {
-    badge.style.display = "none";
-    tbody.innerHTML = `<tr><td colspan="6" class="hwms-empty-state"><i class="fa-regular fa-circle-check"></i><div>ไม่มีผู้ใช้งานที่รออนุมัติ</div></td></tr>`;
-    return;
-  }
-
-  badge.style.display = "inline-flex";
-  badge.textContent = pendingUsers.length;
-
-  const roleOptions = ["Staff", "Technician", "Manager", "Admin"];
-
-  tbody.innerHTML = pendingUsers.map(u => `
-    <tr data-user-id="${u.id}">
-      <td>
-        <div style="font-weight:700; font-size:13px;">${u.fullName}</div>
-        <div style="font-size:11px; color:var(--hwms-text-muted);">@${u.username}</div>
-      </td>
-      <td>${getDepartmentName(u.department)}</td>
-      <td>${u.createdAt ? formatThaiDateTime(u.createdAt) : "-"}</td>
-      <td>
-        <select class="form-select hwms-input pending-role-select" style="min-width:130px;">
-          ${roleOptions.map(r => `<option value="${r}" ${r === "Staff" ? "selected" : ""}>${r}</option>`).join("")}
-        </select>
-      </td>
-      <td>
-        <select class="form-select hwms-input pending-dept-select" style="min-width:150px;">
-          ${db.departments.map(d => `<option value="${d.id}" ${d.id === u.department ? "selected" : ""}>${d.nameTh}</option>`).join("")}
-        </select>
-      </td>
-      <td class="text-nowrap">
-        <button class="btn btn-hwms-primary btn-sm approve-btn" style="padding:6px 12px;"><i class="fa-solid fa-check"></i></button>
-        <button class="btn btn-hwms-outline btn-sm reject-btn" style="padding:6px 12px;"><i class="fa-solid fa-xmark"></i></button>
-      </td>
-    </tr>
-  `).join("");
-
-  tbody.querySelectorAll(".approve-btn").forEach(btn => {
-    btn.addEventListener("click", async function () {
-      const row = this.closest("tr");
-      const userId = row.dataset.userId;
-      const role = row.querySelector(".pending-role-select").value;
-      const departmentId = row.querySelector(".pending-dept-select").value;
-
-      const confirmed = await confirmAction(
-        "อนุมัติผู้ใช้งานนี้?",
-        `จะอนุมัติในฐานะ ${role} แผนก ${getDepartmentName(departmentId)}`,
-        "อนุมัติ"
-      );
-      if (!confirmed) return;
-
-      try {
-        await approveUser(userId, role, departmentId);
-        showToast("อนุมัติผู้ใช้งานเรียบร้อยแล้ว");
-        await renderPendingUsersTable(getDB());
-        renderUsersTable(getDB());
-      } catch (err) {
-        console.error(err);
-        showToast("อนุมัติไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "error");
-      }
-    });
-  });
-
-  tbody.querySelectorAll(".reject-btn").forEach(btn => {
-    btn.addEventListener("click", async function () {
-      const row = this.closest("tr");
-      const userId = row.dataset.userId;
-
-      const confirmed = await confirmAction(
-        "ปฏิเสธคำขอสมัครสมาชิก?",
-        "ข้อมูลโปรไฟล์ของผู้สมัครนี้จะถูกลบทิ้ง (บัญชี Auth เบื้องหลังต้องลบเองใน Supabase Dashboard)",
-        "ปฏิเสธ"
-      );
-      if (!confirmed) return;
-
-      try {
-        await rejectUser(userId);
-        showToast("ปฏิเสธคำขอสมัครสมาชิกแล้ว");
-        await renderPendingUsersTable(getDB());
-      } catch (err) {
-        console.error(err);
-        showToast("ดำเนินการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "error");
-      }
-    });
-  });
-}
-
 /* ================= GOOGLE DRIVE BACKUP ================= */
 
 /**
  * วาดตารางรายการ ticket ที่ "เสร็จสิ้น" แล้วแต่ยังไม่เคยสำรองขึ้น Google Drive
- * พร้อมอัปเดต badge จำนวนที่แถบเมนูซ้าย (รูปแบบเดียวกับ badge "รออนุมัติ")
+ * พร้อมอัปเดต badge จำนวนที่แถบเมนูซ้าย
  */
 function renderBackupTable() {
   const pending = getTicketsPendingBackup();
