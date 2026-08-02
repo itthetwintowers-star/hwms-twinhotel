@@ -51,8 +51,18 @@ const CANCEL_ALLOWED_STATUSES = ["new", "accepted"];
  */
 
 /** Admin/Manager หรือช่างที่ถูกมอบหมายงานนี้ เปลี่ยนสถานะได้ */
+/** Admin/Manager หรือช่างที่ถูกมอบหมายงานนี้ เปลี่ยนสถานะได้ (ยกเว้นตอนสถานะเป็น
+ *  "ตรวจสอบงานผู้แจ้ง" ซึ่งมีกฎพิเศษแยกต่างหาก ดู trigger enforce_ticket_update_rules
+ *  ในฐานข้อมูล — ฟังก์ชันนี้แค่ควบคุมการแสดงผลปุ่มให้ตรงกับสิทธิ์จริงเท่านั้น) */
 function canManageTicketStatus(ticket, currentUser) {
   if (currentUser.role === "Admin" || currentUser.role === "Manager") return true;
+
+  if (ticket.status === "reviewing") {
+    if (ticket.requester === currentUser.id) return true;
+    const requesterProfile = getDB().users.find(u => u.id === ticket.requester);
+    return !!(requesterProfile && requesterProfile.department === currentUser.department);
+  }
+
   return ticket.assignee === currentUser.id;
 }
 
@@ -615,6 +625,8 @@ function renderTicketsTable() {
         <td>${t.assigneeName}</td>
         <td>${renderPriorityBadge(t.priority)}</td>
         <td>${renderStatusBadge(t.status)}</td>
+        <td>${renderSlaCell(t)}</td>
+        <td>${formatElapsedWorkingTime(computeElapsedWorkingMs(t))}</td>
         <td>${formatThaiDateTime(t.createdDate)}</td>
         <td>
           <a href="ticket-detail.html?id=${t.id}" class="hwms-icon-btn" style="width:32px;height:32px;" title="ดูรายละเอียด">
@@ -658,6 +670,81 @@ function renderPaginationControls(totalPages) {
 function changeTicketPage(page) {
   ticketListState.page = page;
   renderTicketsTable();
+}
+
+/**
+ * วาดแกลเลอรีไฟล์แนบ: รูปภาพแสดงเป็น thumbnail คลิกเพื่อดูขนาดเต็ม, ไฟล์อื่น (เช่น PDF)
+ * แสดงเป็น badge ให้คลิกเปิดในแท็บใหม่แทน
+ */
+/* ================= SLA / เวลาที่ดำเนินการ (หน้าติดตามงาน) ================= */
+
+// สถานะที่ถือว่า "ปิดงานแล้ว" ไม่ต้องแสดง SLA แบบนับถอยหลังอีกต่อไป
+const SLA_CLOSED_STATUSES = ["completed", "cancelled", "resolved", "reviewing"];
+
+/** วาดเซลล์ SLA: นับถอยหลัง/เกินกำหนดสำหรับงานที่ยังเปิดอยู่ หรือ "-" สำหรับงานที่ปิดแล้ว */
+function renderSlaCell(ticket) {
+  if (SLA_CLOSED_STATUSES.includes(ticket.status)) {
+    return `<span class="text-muted">-</span>`;
+  }
+
+  const diffMs = new Date(ticket.dueDate).getTime() - Date.now();
+  const overdue = diffMs < 0;
+  const label = formatDurationShort(Math.abs(diffMs));
+
+  return overdue
+    ? `<span class="text-danger fw-bold"><i class="fa-solid fa-triangle-exclamation me-1"></i>เกิน ${label}</span>`
+    : `<span class="text-success fw-bold">เหลือ ${label}</span>`;
+}
+
+/**
+ * คำนวณ "เวลาที่ดำเนินการอยู่จริง" (ms) จาก timeline ของ ticket โดยนับเฉพาะช่วงที่
+ * สถานะเป็น "กำลังดำเนินการ" เท่านั้น — หยุดนับตอนเปลี่ยนเป็น "รอดำเนินการ" (pending)
+ * แล้วนับต่อถ้ากลับมาเป็น "กำลังดำเนินการ" อีกครั้ง (เช่นตรวจสอบแล้วไม่ผ่าน ย้อนกลับมาแก้ไข)
+ * และหยุดนับถาวรตอนเปลี่ยนเป็น "ดำเนินการแก้ไขแล้ว" (resolved) เป็นต้นไป
+ */
+function computeElapsedWorkingMs(ticket) {
+  if (!ticket.timeline || ticket.timeline.length === 0) return 0;
+
+  let total = 0;
+  let inProgressStart = null;
+
+  for (const event of ticket.timeline) {
+    const eventTime = new Date(event.date).getTime();
+    const isEnteringInProgress = event.action.includes('เปลี่ยนสถานะเป็น "กำลังดำเนินการ"');
+
+    if (isEnteringInProgress) {
+      inProgressStart = eventTime;
+    } else if (inProgressStart !== null) {
+      // มีการเปลี่ยนสถานะอื่นเกิดขึ้นระหว่างที่กำลังนับเวลาอยู่ -> ปิดช่วงนี้แล้วบวกเข้ารวม
+      total += eventTime - inProgressStart;
+      inProgressStart = null;
+    }
+  }
+
+  // ถ้ายังอยู่ในสถานะ "กำลังดำเนินการ" ตอนนี้ (ยังไม่มี event ปิดช่วง) ให้นับถึงปัจจุบันด้วย
+  if (inProgressStart !== null) {
+    total += Date.now() - inProgressStart;
+  }
+
+  return total;
+}
+
+/** แปลง milliseconds เป็นข้อความสั้น เช่น "2 วัน 3 ชม." หรือ "45 นาที" */
+function formatDurationShort(ms) {
+  const totalMinutes = Math.floor(ms / 60000);
+  const days = Math.floor(totalMinutes / (60 * 24));
+  const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) return `${days} วัน ${hours} ชม.`;
+  if (hours > 0) return `${hours} ชม. ${minutes} นาที`;
+  return `${minutes} นาที`;
+}
+
+/** แสดงเวลาที่ดำเนินการสะสม หรือ "-" ถ้ายังไม่เคยเข้าสถานะ "กำลังดำเนินการ" เลย */
+function formatElapsedWorkingTime(ms) {
+  if (!ms || ms <= 0) return `<span class="text-muted">-</span>`;
+  return `<span style="font-size:12.5px;">${formatDurationShort(ms)}</span>`;
 }
 
 /**

@@ -265,14 +265,15 @@ function getPriorityInfo(id) {
 }
 
 /** สร้างเลขที่ Ticket อัตโนมัติรูปแบบ TKYYYYMMDDxxxx จากข้อมูลใน cache */
+/** สร้างเลขที่ Ticket อัตโนมัติรูปแบบ TKYYYYMMxxxx (ปี 4 หลัก + เดือน 2 หลัก + เลขรัน 4 หลัก
+ *  รีเซ็ตเลขรันใหม่ทุกต้นเดือน เช่น TK2026010001, TK2026010002, ... TK2026020001) */
 function generateTicketNo() {
   const now = new Date();
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  const prefix = `TK${y}${m}${d}`;
-  const todayCount = _cache.tickets.filter(t => t.ticketNo.startsWith(prefix)).length;
-  return prefix + String(todayCount + 1).padStart(4, "0");
+  const prefix = `TK${y}${m}`;
+  const monthCount = _cache.tickets.filter(t => t.ticketNo.startsWith(prefix)).length;
+  return prefix + String(monthCount + 1).padStart(4, "0");
 }
 
 /* ================= AUTH ================= */
